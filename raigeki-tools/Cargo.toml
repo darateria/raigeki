@@ -1,0 +1,10 @@
+[package]
+name = "raigeki-tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+reqwest = { version = "0.12.9", features = [ "blocking" ] }
+raigeki-error = { version = "0.1.0", path = "../raigeki-error" }
+log = "0.4.22"
+pingora-limits = "0.4.0"
