@@ -2,7 +2,8 @@
 resolver = "2"
 members = [
     "raigeki",
-    "raigeki-error", "raigeki-tools",
+    "raigeki-error",
+    "raigeki-tools",
 ]
 
 [profile.bench]

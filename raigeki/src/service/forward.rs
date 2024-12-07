@@ -16,6 +16,8 @@ use pingora_limits::rate::Rate;
 
 use prometheus::{register_counter, register_int_counter, register_int_gauge, Counter, IntCounter, IntGauge};
 
+use crate::service::MemcachedStatus;
+
 use super::geoip;
 use raigeki_error::Error;
 
@@ -33,6 +35,9 @@ static RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(1))
 static REQUEST_TOTAL: Lazy<Counter> =
     Lazy::new(|| register_counter!("request_total", "Number of processed requests per seccond").unwrap());
 
+static INCOMING_CONNECTIONS_ATTEMPTS: Lazy<IntGauge> = 
+    Lazy::new(|| register_int_gauge!("incoming_connections_attempts", "Total number of incoming connection attempts, including both successful and unsuccessful connections.").unwrap());
+
 pub fn forward_service(app: ForwardApp) -> Service<ForwardApp> {
     Service::new("Upstream Service".to_string(), app)
 }
@@ -41,14 +46,16 @@ pub struct ForwardApp {
     geoip_service: Arc<geoip::GeoIPService>,
     outbound_addr: SocketAddr,
     mrps: isize,
+    memcached_client: memcache::Client,
 }
 
 impl ForwardApp {
-    pub fn new(outbound_addr: SocketAddr, geoip_service: Arc<geoip::GeoIPService>, mrps: isize) -> Self {
+    pub fn new(outbound_addr: SocketAddr, geoip_service: Arc<geoip::GeoIPService>, mrps: isize, memcached_client: memcache::Client,) -> Self {
         ForwardApp {
             outbound_addr,
             geoip_service,
             mrps,
+            memcached_client,
         }
     }
 }
@@ -60,34 +67,57 @@ impl ServerApp for ForwardApp {
         mut io: Stream,
         _shutdown: &ShutdownWatch,
     ) -> Option<Stream> {
-        let socket_digest = io.get_socket_digest();
+        INCOMING_CONNECTIONS_ATTEMPTS.inc();
 
-        let incomming_addr = socket_digest
+        let socket_digest = io.get_socket_digest();
+        let socket_addr = socket_digest
             .as_ref()
             .map(|d| d.peer_addr())
             .unwrap()
             .unwrap();
-        debug!("{}", incomming_addr);
+        let incomming_addr= socket_addr.as_inet().unwrap().ip();
+        debug!("{}", socket_addr);
+
+        let ip_status: i16 = self.memcached_client.get(&incomming_addr.to_string())
+            .map_err(|e| {
+                match e {
+                    memcache::MemcacheError::CommandError(memcache::CommandError::KeyNotFound) => {
+                        return Ok(());
+                    },
+                    _ => {}
+                }
+                Err(e)
+            }).unwrap().unwrap_or_default();
+
+        if ip_status == MemcachedStatus::IpBlocked as i16 {
+            warn!("address {} reject from cache", incomming_addr);
+            io.shutdown().await.unwrap();
+            return None;
+        }
 
         let mut outbound = TcpStream::connect(self.outbound_addr).await.unwrap();
 
         if self
             .geoip_service
-            .in_asn_blacklist(incomming_addr.as_inet().unwrap().ip())
-            .is_err()
+            .in_asn_blacklist(incomming_addr)
+            .unwrap_or(true)
         {
-            warn!("faild check ASN")
+            warn!("address {} reject by asn", incomming_addr);
+            self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
+            io.shutdown().await.unwrap();
+            return None;
         }
 
         if self
             .geoip_service
-            .in_country_blacklist(incomming_addr.as_inet().unwrap().ip())
-            .is_err()
+            .in_country_blacklist(incomming_addr)
+            .unwrap_or(true)
         {
-            warn!("faild check country")
+            warn!("address {} reject by country", incomming_addr);
+            self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
+            io.shutdown().await.unwrap();
+            return None;
         }
-
-        // TODO: mb ban list
 
         TOTAL_CONNS.inc();
 
@@ -105,6 +135,14 @@ impl ForwardApp {
     async fn handle_connection(&self, io: &mut Box<dyn IO>, outbound: &mut TcpStream) -> Result<(), Error> {
         let mut buf_io = vec![0; 1024];
         let mut buf_outbound = vec![0; 1024];
+
+        let socket_digest = io.get_socket_digest();
+        let socket_addr = socket_digest
+            .as_ref()
+            .map(|d| d.peer_addr())
+            .unwrap()
+            .unwrap();
+        let incomming_addr= socket_addr.as_inet().unwrap().ip();
     
         loop {
             select! {
@@ -117,14 +155,10 @@ impl ForwardApp {
                             INCOMING_BYTES_TOTAL.inc_by(n as u64);
                             REQUEST_TOTAL.inc();
     
-                            let curr_window_requests = RATE_LIMITER.observe(&io
-                                .get_socket_digest()
-                                .as_ref()
-                                .map(|d| d.peer_addr())
-                                .unwrap()
-                                .unwrap(), 1);
+                            let curr_window_requests = RATE_LIMITER.observe(&incomming_addr, 1);
                             
                             if curr_window_requests > self.mrps {
+                                self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
                                 io.shutdown().await?;
                             }
                         }

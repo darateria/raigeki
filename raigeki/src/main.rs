@@ -34,6 +34,8 @@ pub fn main() {
 
     let settings = settings::Settings::new();
 
+    let memcache_client = memcache::connect(settings.memcached_addrs).unwrap();
+
     if settings.auto_mmdb {
         download_ddbm(&settings.mmdb_asn, &settings.mmdb_city).unwrap()
     }
@@ -62,6 +64,7 @@ pub fn main() {
             .unwrap(),
         geoip_service,
         settings.rate_limit,
+        memcache_client,
     );
 
     let mut forward_service = service::forward::forward_service(forward_app);

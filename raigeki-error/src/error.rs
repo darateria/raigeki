@@ -1,4 +1,5 @@
 use thiserror::Error;
+use memcache::MemcacheError; // Make sure to import the MemcacheError type
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -12,6 +13,8 @@ pub enum Error {
     ReqwestError(#[from] reqwest::Error),
     #[error("got unexpected status code: {0}")]
     ReqwestUnexpectedStatusCodeError(reqwest::StatusCode),
+    #[error("memcached: {0}")]
+    MemcachedError(MemcacheError),
 }
 
 impl serde::Serialize for Error {
@@ -20,5 +23,11 @@ impl serde::Serialize for Error {
         S: serde::ser::Serializer,
     {
         serializer.serialize_str(self.to_string().as_ref())
+    }
+}
+
+impl From<memcache::MemcacheError> for Error {
+    fn from(err: memcache::MemcacheError) -> Self {
+        Error::MemcachedError(err)
     }
 }

@@ -1,4 +1,12 @@
 services:
+  memcached:
+    image: memcached:1.6.32-alpine3.20
+    ports:
+      - 11211:11211
+    command:
+      - --conn-limit=1024
+      - --memory-limit=64
+      - --threads=4
   prometheus:
     image: prom/prometheus
     container_name: prometheus

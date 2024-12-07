@@ -14,6 +14,7 @@ pub struct Settings {
     pub blocked_asn: Vec<u32>,
     pub blocked_country: Vec<String>,
     pub rate_limit: isize,
+    pub memcached_addrs: Vec<String>,
 }
 
 fn parse_env_to_bool(var_name: &str, default: bool) -> bool {
@@ -75,7 +76,7 @@ impl Settings {
                 info!("BLOCKED_ASN not set, using empty list");
                 String::new()
             })
-            .split(';')
+            .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .map(|s| {
@@ -91,7 +92,7 @@ impl Settings {
                 info!("BLOCKED_COUNTRY not set, using empty list");
                 String::new()
             })
-            .split(';')
+            .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
@@ -107,6 +108,14 @@ impl Settings {
                 50
             });
 
+        let memcached_addrs = env::var("MEMCACHED_ADDRS")
+            .unwrap()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+
         Settings {
             auto_mmdb,
             mmdb_asn,
@@ -118,6 +127,7 @@ impl Settings {
             blocked_asn,
             blocked_country,
             rate_limit,
+            memcached_addrs,
         }
     }
 }

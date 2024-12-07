@@ -1,10 +1,11 @@
 [package]
 name = "raigeki-error"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
 maxminddb = "0.24.0"
+memcache = "0.18.0"
 reqwest = "0.12.9"
 serde = "1.0.215"
 thiserror = "2.0.4"
