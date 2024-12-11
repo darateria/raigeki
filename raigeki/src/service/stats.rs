@@ -1,10 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use pingora::{server::ShutdownWatch, services::background::BackgroundService};
 use prometheus::{register_gauge, register_int_gauge, Gauge, IntGauge};
-use sysinfo::{Pid, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tokio::time::interval;
 
 static CPU_USAGE_TOTAL: Lazy<Gauge> =
@@ -15,13 +15,13 @@ static RAM_USAGE_TOTAL: Lazy<IntGauge> =
 
 pub struct ExportService {
     pid: usize,
-    system: Arc<System>,
+    system: Arc<Mutex<System>>,
 }
 
 impl ExportService {
     pub fn new() -> Self {
         let current_pid = std::process::id();
-        let system = Arc::new(System::new_all());
+        let system = Arc::new(Mutex::new(System::new_all()));
 
         ExportService { pid: current_pid as usize, system}
     }
@@ -31,6 +31,7 @@ impl ExportService {
 impl BackgroundService for ExportService {
     async fn start(&self, mut shutdown: ShutdownWatch) {
         let mut period = interval(Duration::from_secs(10));
+
         loop {
             tokio::select! {
                 _ = shutdown.changed() => {
@@ -38,9 +39,19 @@ impl BackgroundService for ExportService {
                     break;
                 }
                 _ = period.tick() => {
-                    let proc = self.system.as_ref().process(Pid::from(self.pid)).unwrap();
+                    let mut s = self.system.lock().unwrap();
 
-                    CPU_USAGE_TOTAL.set(proc.cpu_usage() as f64);
+                    s.refresh_processes_specifics(
+                        ProcessesToUpdate::Some(&[self.pid.into()]),
+                        true,
+                        ProcessRefreshKind::nothing().with_cpu()
+                    );
+
+                    let proc = s.process(Pid::from(self.pid)).unwrap();
+
+                    let cpu_usage = proc.cpu_usage() / num_cpus::get() as f32;
+
+                    CPU_USAGE_TOTAL.set(cpu_usage as f64);
                     RAM_USAGE_TOTAL.set(proc.memory() as i64);
                 }
             }

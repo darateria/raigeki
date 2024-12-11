@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
@@ -69,6 +69,26 @@ impl ServerApp for ForwardApp {
     ) -> Option<Stream> {
         INCOMING_CONNECTIONS_ATTEMPTS.inc();
 
+        if !self.is_valid_connection(&mut io).await {
+            return None;
+        }
+
+        let mut outbound = TcpStream::connect(self.outbound_addr).await.unwrap();
+
+        TOTAL_CONNS.inc();
+
+        if self.handle_connection(&mut io, &mut outbound).await.is_err() {
+            warn!("connection end with error")
+        }
+
+        TOTAL_CONNS.dec();
+
+        None
+    }
+}
+
+impl ForwardApp {
+    async fn is_valid_connection(&self, io: &mut Stream) -> bool {
         let socket_digest = io.get_socket_digest();
         let socket_addr = socket_digest
             .as_ref()
@@ -89,13 +109,15 @@ impl ServerApp for ForwardApp {
                 Err(e)
             }).unwrap().unwrap_or_default();
 
+        if incomming_addr == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
+            return true;
+        }
+
         if ip_status == MemcachedStatus::IpBlocked as i16 {
             warn!("address {} reject from cache", incomming_addr);
             io.shutdown().await.unwrap();
-            return None;
+            return false;
         }
-
-        let mut outbound = TcpStream::connect(self.outbound_addr).await.unwrap();
 
         if self
             .geoip_service
@@ -105,7 +127,7 @@ impl ServerApp for ForwardApp {
             warn!("address {} reject by asn", incomming_addr);
             self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
-            return None;
+            return false;
         }
 
         if self
@@ -116,22 +138,12 @@ impl ServerApp for ForwardApp {
             warn!("address {} reject by country", incomming_addr);
             self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
-            return None;
+            return false;
         }
 
-        TOTAL_CONNS.inc();
-
-        if self.handle_connection(&mut io, &mut outbound).await.is_err() {
-            warn!("connection end with error")
-        }
-
-        TOTAL_CONNS.dec();
-
-        None
+        return true;
     }
-}
 
-impl ForwardApp {
     async fn handle_connection(&self, io: &mut Box<dyn IO>, outbound: &mut TcpStream) -> Result<(), Error> {
         let mut buf_io = vec![0; 1024];
         let mut buf_outbound = vec![0; 1024];

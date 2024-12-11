@@ -15,6 +15,7 @@
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+use pingora::prelude::Opt;
 use pingora::protocols::TcpKeepalive;
 use pingora::server::Server;
 use pingora::services::background::background_service;
@@ -32,8 +33,8 @@ mod settings;
 pub fn main() {
     env_logger::init();
 
+    let mut server = Server::new(Some(Opt::parse_args())).unwrap();
     let settings = settings::Settings::new();
-
     let memcache_client = memcache::connect(settings.memcached_addrs).unwrap();
 
     if settings.auto_mmdb {
@@ -46,9 +47,6 @@ pub fn main() {
         settings.blocked_asn,
         settings.blocked_country,
     ));
-
-    let mut my_server = Server::new(None).unwrap();
-    my_server.bootstrap();
 
     let mut options = pingora::listeners::TcpSocketOptions::default();
     options.tcp_fastopen = Some(10);
@@ -80,6 +78,9 @@ pub fn main() {
         Box::new(prometheus_service_http),
         Box::new(background_service),
     ];
-    my_server.add_services(services);
-    my_server.run_forever();
+
+    server.bootstrap();
+
+    server.add_services(services);
+    server.run_forever();
 }
