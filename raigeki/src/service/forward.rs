@@ -122,7 +122,6 @@ impl ForwardApp {
             }
         };
 
-        // Формируем HAProxy v1 заголовок
         let header = match (src_addr, dest_addr) {
             (IpAddr::V4(src_ip), IpAddr::V4(dest_ip)) => {
                 format!(
@@ -137,7 +136,6 @@ impl ForwardApp {
                 )
             }
             _ => {
-                // Для смешанных IPv4/IPv6 используем TCP6
                 format!(
                     "PROXY TCP6 {} {} {} {}\r\n",
                     src_addr, dest_addr, src_port, dest_port
@@ -145,7 +143,6 @@ impl ForwardApp {
             }
         };
 
-        // Отправляем заголовок
         outbound.write_all(header.as_bytes()).await?;
         outbound.flush().await?;
 
