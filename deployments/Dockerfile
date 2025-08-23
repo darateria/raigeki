@@ -1,20 +1,33 @@
 FROM rust:1.88.0-alpine3.21 AS builder
 
 RUN apk add --no-cache \
+    musl-dev \
     pkgconfig \
     openssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+    build-base \
+    cmake
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml .
+COPY raigeki/Cargo.toml raigeki/Cargo.toml
+COPY raigeki-error/Cargo.toml raigeki-error/Cargo.toml
+COPY raigeki-tools/Cargo.toml raigeki-tools/Cargo.toml
 
-COPY src ./src
-COPY migrations ./migrations
-COPY templates ./templates
+RUN mkdir -p raigeki/src && \
+    echo "fn main() {}" > raigeki/src/main.rs && \
+    mkdir -p raigeki-error/src && \
+    echo "pub fn dummy() {}" > raigeki-error/src/lib.rs && \
+    mkdir -p raigeki-tools/src && \
+    echo "pub fn dummy() {}" > raigeki-tools/src/lib.rs
 
-RUN cargo build --release --locked
+RUN cargo build --release --package raigeki
 
+COPY raigeki-error/src raigeki-error/src
+COPY raigeki-tools/src raigeki-tools/src
+COPY raigeki/src raigeki/src
+
+RUN cargo build --release --package raigeki
 FROM alpine:3.21 AS runtime
 
 RUN apk add --no-cache \
