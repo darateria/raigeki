@@ -1,0 +1,71 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: raigeki-proxy
+  labels:
+    app: raigeki-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: raigeki-proxy
+  template:
+    metadata:
+      labels:
+        app: raigeki-proxy
+    spec:
+      containers:
+      - name: raigeki-proxy
+        image: ghcr.io/g0dm0d/raigeki/raigeki:latest
+        imagePullPolicy: Always
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: HAPROXY_HEADERS
+          value: "true"
+        - name: MMDB_AUTOMODE
+          value: "true"
+        - name: MMDB_ASN
+          value: "/tmp/GeoLite2-ASN.mmdb"
+        - name: MMDB_CITY
+          value: "/tmp/GeoLite2-City.mmdb"
+        - name: L4_IP
+          value: "0.0.0.0"
+        - name: L4_PORT
+          value: "25565"
+        - name: OUTBOUND_IP
+          value: "0.0.0.0"
+        - name: OUTBOUND_PORT
+          value: "25565"
+        - name: BLOCKED_ASN
+          value: "12345,67890"
+        - name: BLOCKED_COUNTRY
+          value: "RU,CN"
+        - name: RATE_LIMIT
+          value: "100"
+        - name: MEMCACHED_ADDRS
+          value: "memcached-service:11211"
+        ports:
+        - containerPort: 25565
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverse-proxy-service
+spec:
+  selector:
+    app: raigeki-proxy
+  ports:
+    - protocol: TCP
+      port: 25565
+      targetPort: 25565 # L4_PORT
+  type: LoadBalancer # (AWS, GCP, Azure)
+  # type: NodePort # Minikube, kind
