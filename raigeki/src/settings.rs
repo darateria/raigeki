@@ -1,10 +1,12 @@
 use std::env;
 
+use dotenvy::dotenv;
 use log::{error, info};
 
 #[derive(Debug)]
 pub struct Settings {
     pub auto_mmdb: bool,
+    pub haproxy: bool,
     pub mmdb_asn: String,
     pub mmdb_city: String,
     pub l4_ip: String,
@@ -30,7 +32,10 @@ fn parse_env_to_bool(var_name: &str, default: bool) -> bool {
 
 impl Settings {
     pub fn new() -> Self {
+        let _ = dotenv();
+        
         let auto_mmdb = parse_env_to_bool("MMDB_AUTOMODE", true);
+        let haproxy = parse_env_to_bool("HAPROXY_HEADERS", false);
         let mut mmdb_asn = "/tmp/geolite2-asn.mmdb".to_owned();
         let mut mmdb_city = "/tmp/geolite2-city.mmdb".to_owned();
 
@@ -118,6 +123,7 @@ impl Settings {
 
         Settings {
             auto_mmdb,
+            haproxy,
             mmdb_asn,
             mmdb_city,
             l4_ip,

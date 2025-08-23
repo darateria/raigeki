@@ -15,6 +15,7 @@
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+use log::info;
 use pingora::prelude::Opt;
 use pingora::protocols::TcpKeepalive;
 use pingora::server::Server;
@@ -54,6 +55,7 @@ pub fn main() {
         idle: Duration::from_secs(60),
         interval: Duration::from_secs(5),
         count: 5,
+        user_timeout: Duration::from_secs(10),
     });
 
     let forward_app = service::forward::ForwardApp::new(
@@ -63,6 +65,7 @@ pub fn main() {
         geoip_service,
         settings.rate_limit,
         memcache_client,
+        settings.haproxy
     );
 
     let mut forward_service = service::forward::forward_service(forward_app);
@@ -78,6 +81,8 @@ pub fn main() {
         Box::new(prometheus_service_http),
         Box::new(background_service),
     ];
+
+    info!("service started");
 
     server.bootstrap();
 

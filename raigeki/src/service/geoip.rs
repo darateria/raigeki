@@ -93,8 +93,10 @@ const DDBM_ASN: &str = "https://git.io/GeoLite2-ASN.mmdb";
 const DDBM_CITY: &str = "https://git.io/GeoLite2-City.mmdb";
 
 pub fn download_ddbm(asn_path: &str, city_path: &str) -> Result<(), Error> {
+    info!("start download ddbm");
     download(DDBM_ASN, asn_path)?;
     download(DDBM_CITY, city_path)?;
+    info!("finish ddbm");
 
     Ok(())
 }

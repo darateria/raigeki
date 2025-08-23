@@ -15,6 +15,8 @@ pub enum Error {
     ReqwestUnexpectedStatusCodeError(reqwest::StatusCode),
     #[error("memcached: {0}")]
     MemcachedError(MemcacheError),
+    #[error("invalid connection")]
+    InvalidConnection
 }
 
 impl serde::Serialize for Error {

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
@@ -47,15 +47,17 @@ pub struct ForwardApp {
     outbound_addr: SocketAddr,
     mrps: isize,
     memcached_client: memcache::Client,
+    haproxy: bool,
 }
 
 impl ForwardApp {
-    pub fn new(outbound_addr: SocketAddr, geoip_service: Arc<geoip::GeoIPService>, mrps: isize, memcached_client: memcache::Client,) -> Self {
+    pub fn new(outbound_addr: SocketAddr, geoip_service: Arc<geoip::GeoIPService>, mrps: isize, memcached_client: memcache::Client, haproxy: bool) -> Self {
         ForwardApp {
             outbound_addr,
             geoip_service,
             mrps,
             memcached_client,
+            haproxy
         }
     }
 }
@@ -77,6 +79,14 @@ impl ServerApp for ForwardApp {
 
         TOTAL_CONNS.inc();
 
+        if self.haproxy {
+            if let Err(e) = self.write_haproxy_header(&mut outbound, &io).await {
+                warn!("Failed to write HAProxy header: {:?}", e);
+                io.shutdown().await.unwrap();
+                return None;
+            }
+        }
+
         if self.handle_connection(&mut io, &mut outbound).await.is_err() {
             warn!("connection end with error")
         }
@@ -88,6 +98,60 @@ impl ServerApp for ForwardApp {
 }
 
 impl ForwardApp {
+    async fn write_haproxy_header(&self, outbound: &mut TcpStream, io: &Stream) -> Result<(), Error> {
+        let socket_digest = io.get_socket_digest();
+        let (src_addr, src_port, dest_addr, dest_port) = match socket_digest {
+            Some(digest) => {
+                let peer_addr = digest.peer_addr().unwrap();
+                let local_addr = digest.local_addr().unwrap();
+                
+                let (src_ip, src_port) = match peer_addr.as_inet().unwrap() {
+                    SocketAddr::V4(addr) => (IpAddr::V4(*addr.ip()), addr.port()),
+                    SocketAddr::V6(addr) => (IpAddr::V6(*addr.ip()), addr.port()),
+                };
+                
+                let (dest_ip, dest_port) = match local_addr.as_inet().unwrap() {
+                    SocketAddr::V4(addr) => (IpAddr::V4(*addr.ip()), addr.port()),
+                    SocketAddr::V6(addr) => (IpAddr::V6(*addr.ip()), addr.port()),
+                };
+                
+                (src_ip, src_port, dest_ip, dest_port)
+            }
+            None => {
+                return Err(Error::InvalidConnection);
+            }
+        };
+
+        // Формируем HAProxy v1 заголовок
+        let header = match (src_addr, dest_addr) {
+            (IpAddr::V4(src_ip), IpAddr::V4(dest_ip)) => {
+                format!(
+                    "PROXY TCP4 {} {} {} {}\r\n",
+                    src_ip, dest_ip, src_port, dest_port
+                )
+            }
+            (IpAddr::V6(src_ip), IpAddr::V6(dest_ip)) => {
+                format!(
+                    "PROXY TCP6 {} {} {} {}\r\n",
+                    src_ip, dest_ip, src_port, dest_port
+                )
+            }
+            _ => {
+                // Для смешанных IPv4/IPv6 используем TCP6
+                format!(
+                    "PROXY TCP6 {} {} {} {}\r\n",
+                    src_addr, dest_addr, src_port, dest_port
+                )
+            }
+        };
+
+        // Отправляем заголовок
+        outbound.write_all(header.as_bytes()).await?;
+        outbound.flush().await?;
+
+        Ok(())
+    }
+
     async fn is_valid_connection(&self, io: &mut Stream) -> bool {
         let socket_digest = io.get_socket_digest();
         let socket_addr = socket_digest
