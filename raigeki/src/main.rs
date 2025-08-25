@@ -16,6 +16,7 @@
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 use log::info;
+use anyhow::{Context, Result};
 use pingora::prelude::Opt;
 use pingora::protocols::TcpKeepalive;
 use pingora::server::Server;
@@ -31,15 +32,21 @@ use std::time::Duration;
 mod service;
 mod settings;
 
-pub fn main() {
+fn main() {
+    if let Err(e) = init() {
+        log::error!("{}", e);
+    }
+}
+
+fn init() -> Result<()> {
     env_logger::init();
 
-    let mut server = Server::new(Some(Opt::parse_args())).unwrap();
+    let mut server = Server::new(Some(Opt::parse_args())).context("init server")?;
     let settings = settings::Settings::new();
-    let memcache_client = memcache::connect(settings.memcached_addrs).unwrap();
+    let memcache_client = memcache::connect(settings.memcached_addrs).context("init memcached")?;
 
     if settings.auto_mmdb {
-        download_ddbm(&settings.mmdb_asn, &settings.mmdb_city).unwrap()
+        download_ddbm(&settings.mmdb_asn, &settings.mmdb_city).context("download MMDB")?;
     }
 
     let geoip_service = Arc::new(service::geoip::GeoIPService::new(
@@ -61,7 +68,7 @@ pub fn main() {
     let forward_app = service::forward::ForwardApp::new(
         format!("{}:{}", settings.outbound_ip, settings.outbound_port)
             .parse::<SocketAddr>()
-            .unwrap(),
+            .context("Failed to parse outbound address")?,
         geoip_service,
         settings.rate_limit,
         memcache_client,

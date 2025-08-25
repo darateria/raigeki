@@ -114,7 +114,10 @@ impl Settings {
             });
 
         let memcached_addrs = env::var("MEMCACHED_ADDRS")
-            .unwrap()
+            .unwrap_or_else(|_| {
+                info!("MEMCACHED_ADDRS not set, using default value");
+                "0.0.0.0".to_string()
+            })
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
