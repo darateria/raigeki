@@ -68,7 +68,8 @@ fn main() -> Result<()> {
         geoip_service,
         settings.rate_limit,
         memcache_client,
-        settings.haproxy
+        settings.haproxy,
+        settings.ip_whitelist,
     );
 
     let mut forward_service = service::forward::forward_service(forward_app);
