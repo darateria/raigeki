@@ -1,15 +1,11 @@
-use std::{fs::File, io::copy, path::Path, time::Duration};
+use std::{fs::File, io::copy, path::Path};
 
 use log::{error, info};
 use raigeki_error::Error;
-use reqwest::blocking::Client;
+use reqwest::blocking::get;
 
 pub fn download(addr: &str, path: &str) -> Result<(), Error> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(300))
-        .build()?;
-    
-    let response = client.get(addr).send()?;
+    let response = get(addr)?;
 
     if response.status().is_success() {
         let mut file = File::create(Path::new(path))?;

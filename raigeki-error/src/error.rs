@@ -1,5 +1,5 @@
 use thiserror::Error;
-use memcache::MemcacheError;
+use memcache::MemcacheError; // Make sure to import the MemcacheError type
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -16,9 +16,7 @@ pub enum Error {
     #[error("memcached: {0}")]
     MemcachedError(MemcacheError),
     #[error("invalid connection")]
-    InvalidConnection,
-    #[error("support connections only with tcp proxy headers")]
-    InvalidHAProxyHeader
+    InvalidConnection
 }
 
 impl serde::Serialize for Error {
