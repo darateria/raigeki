@@ -32,19 +32,15 @@ use std::time::Duration;
 mod service;
 mod settings;
 
-fn main() {
-    if let Err(e) = init() {
-        log::error!("{}", e);
-    }
-}
-
-fn init() -> Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
+
+    info!("init service");
 
     let mut server = Server::new(Some(Opt::parse_args())).context("init server")?;
     let settings = settings::Settings::new();
     let memcache_client = memcache::connect(settings.memcached_addrs).context("init memcached")?;
-
+    
     if settings.auto_mmdb {
         download_ddbm(&settings.mmdb_asn, &settings.mmdb_city).context("download MMDB")?;
     }

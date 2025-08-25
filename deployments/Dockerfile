@@ -5,7 +5,8 @@ RUN apk add --no-cache \
     pkgconfig \
     openssl-dev \
     build-base \
-    cmake
+    cmake \
+    openssl-libs-static
 
 WORKDIR /app
 
@@ -13,15 +14,6 @@ COPY Cargo.toml .
 COPY raigeki/Cargo.toml raigeki/Cargo.toml
 COPY raigeki-error/Cargo.toml raigeki-error/Cargo.toml
 COPY raigeki-tools/Cargo.toml raigeki-tools/Cargo.toml
-
-RUN mkdir -p raigeki/src && \
-    echo "fn main() {}" > raigeki/src/main.rs && \
-    mkdir -p raigeki-error/src && \
-    echo "pub fn dummy() {}" > raigeki-error/src/lib.rs && \
-    mkdir -p raigeki-tools/src && \
-    echo "pub fn dummy() {}" > raigeki-tools/src/lib.rs
-
-RUN cargo build --release --package raigeki
 
 COPY raigeki-error/src raigeki-error/src
 COPY raigeki-tools/src raigeki-tools/src
@@ -43,8 +35,5 @@ COPY --from=builder /app/target/release/raigeki /app/raigeki
 RUN chown -R raigeki:raigeki /app
 
 USER raigeki
-
-ENV RUST_LOG=info
-ENV RUST_BACKTRACE=1
 
 CMD ["./raigeki"]

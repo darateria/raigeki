@@ -36,13 +36,8 @@ impl Settings {
         
         let auto_mmdb = parse_env_to_bool("MMDB_AUTOMODE", true);
         let haproxy = parse_env_to_bool("HAPROXY_HEADERS", false);
-        let mut mmdb_asn = "/tmp/geolite2-asn.mmdb".to_owned();
-        let mut mmdb_city = "/tmp/geolite2-city.mmdb".to_owned();
-
-        if !auto_mmdb {
-            mmdb_asn = env::var("MMDB_ASN").unwrap();
-            mmdb_city = env::var("MMDB_CITY").unwrap();
-        }
+        let mmdb_asn = env::var("MMDB_ASN").unwrap_or_else(|_| "/tmp/geolite2-asn.mmdb".to_owned());
+        let mmdb_city = env::var("MMDB_CITY").unwrap_or_else(|_| "/tmp/geolite2-city.mmdb".to_owned());
 
         let l4_ip = env::var("L4_IP").unwrap_or_else(|_| {
             info!("L4_IP not set, using default value");
