@@ -119,9 +119,9 @@ impl Settings {
             .filter(|s| !s.is_empty())
             .collect();
 
-        let ip_whitelist = env::var("MEMCACHED_ADDRS")
+        let ip_whitelist = env::var("IP_WHITELIST")
             .unwrap_or_else(|_| {
-                info!("MEMCACHED_ADDRS not set, using default value");
+                info!("IP_WHITELIST not set, using default value");
                 "127.0.0.1".to_string()
             })
             .split(',')
