@@ -20,6 +20,7 @@ use crate::service::MemcachedStatus;
 
 use super::geoip;
 use raigeki_error::Error;
+use raigeki_tools::proxy_header::{parse_haproxy_header, find_subsequence};
 
 static TOTAL_CONNS: Lazy<IntGauge> =
     Lazy::new(|| register_int_gauge!("total_connections", "total tcp connections").unwrap());
@@ -98,6 +99,32 @@ impl ServerApp for ForwardApp {
 }
 
 impl ForwardApp {
+    async fn parse_haproxy_header(&self, io: &mut Stream) -> Result<Option<SocketAddr>, Error> {
+        let mut buffer = [0u8; 108];
+        let mut bytes_read = 0;
+        
+        while bytes_read < buffer.len() {
+            let n = io.read(&mut buffer[bytes_read..]).await?;
+            if n == 0 {
+                break;
+            }
+            bytes_read += n;
+            
+            if let Some(end_pos) = find_subsequence(&buffer[..bytes_read], b"\r\n") {
+                let header_data = &buffer[..end_pos];
+                
+                if let Ok(proxy_info) = parse_haproxy_header(header_data) {
+                    return Ok(Some(SocketAddr::new(proxy_info.src_addr, proxy_info.src_port)));
+                } else {
+                    return Err(Error::InvalidHAProxyHeader);
+                }
+            }
+        }
+        
+        Ok(None)
+    }
+
+
     async fn write_haproxy_header(&self, outbound: &mut TcpStream, io: &Stream) -> Result<(), Error> {
         let socket_digest = io.get_socket_digest();
         let (src_addr, src_port, dest_addr, dest_port) = match socket_digest {
@@ -150,16 +177,29 @@ impl ForwardApp {
     }
 
     async fn is_valid_connection(&self, io: &mut Stream) -> bool {
-        let socket_digest = io.get_socket_digest();
-        let socket_addr = socket_digest
-            .as_ref()
-            .map(|d| d.peer_addr())
-            .unwrap()
-            .unwrap();
-        let incomming_addr= socket_addr.as_inet().unwrap().ip();
-        debug!("{}", socket_addr);
+        let real_client_addr = self.parse_haproxy_header(io).await.unwrap_or(None);
+        debug!("is tcp proxy: {}", real_client_addr.is_none());
 
-        let ip_status: i16 = self.memcached_client.get(&incomming_addr.to_string())
+        let client_ip = match real_client_addr {
+            Some(addr) => addr.ip(),
+            None => {
+                let socket_digest = io.get_socket_digest();
+                let socket_addr = socket_digest
+                    .as_ref()
+                    .map(|d| d.peer_addr())
+                    .unwrap()
+                    .unwrap();
+                socket_addr.as_inet().unwrap().ip()
+            }
+        };
+
+        debug!("Checking connection from: {}", client_ip);
+
+        if client_ip == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
+            return true;
+        }
+
+        let ip_status: i16 = self.memcached_client.get(&client_ip.to_string())
             .map_err(|e| {
                 match e {
                     memcache::MemcacheError::CommandError(memcache::CommandError::KeyNotFound) => {
@@ -170,39 +210,35 @@ impl ForwardApp {
                 Err(e)
             }).unwrap().unwrap_or_default();
 
-        if incomming_addr == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
-            return true;
-        }
-
         if ip_status == MemcachedStatus::IpBlocked as i16 {
-            warn!("address {} reject from cache", incomming_addr);
+            warn!("address {} reject from cache", client_ip);
             io.shutdown().await.unwrap();
             return false;
         }
 
         if self
             .geoip_service
-            .in_asn_blacklist(incomming_addr)
+            .in_asn_blacklist(client_ip)
             .unwrap_or(true)
         {
-            warn!("address {} reject by asn", incomming_addr);
-            self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
+            warn!("address {} reject by asn", client_ip);
+            self.memcached_client.set(&client_ip.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
             return false;
         }
 
         if self
             .geoip_service
-            .in_country_blacklist(incomming_addr)
+            .in_country_blacklist(client_ip)
             .unwrap_or(true)
         {
-            warn!("address {} reject by country", incomming_addr);
-            self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
+            warn!("address {} reject by country", client_ip);
+            self.memcached_client.set(&client_ip.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
             return false;
         }
 
-        return true;
+        true
     }
 
     async fn handle_connection(&self, io: &mut Box<dyn IO>, outbound: &mut TcpStream) -> Result<(), Error> {
