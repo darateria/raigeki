@@ -17,6 +17,7 @@ pub struct Settings {
     pub blocked_country: Vec<String>,
     pub rate_limit: isize,
     pub memcached_addrs: Vec<String>,
+    pub ip_whitelist: Vec<String>,
 }
 
 fn parse_env_to_bool(var_name: &str, default: bool) -> bool {
@@ -118,6 +119,15 @@ impl Settings {
             .filter(|s| !s.is_empty())
             .collect();
 
+        let ip_whitelist = env::var("MEMCACHED_ADDRS")
+            .unwrap_or_else(|_| {
+                info!("MEMCACHED_ADDRS not set, using default value");
+                "127.0.0.1".to_string()
+            })
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
 
         Settings {
             auto_mmdb,
@@ -132,6 +142,7 @@ impl Settings {
             blocked_country,
             rate_limit,
             memcached_addrs,
+            ip_whitelist,
         }
     }
 }

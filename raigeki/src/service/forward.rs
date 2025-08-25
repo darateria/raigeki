@@ -48,16 +48,25 @@ pub struct ForwardApp {
     mrps: isize,
     memcached_client: memcache::Client,
     haproxy: bool,
+    ip_whitelist: Vec<String>,
 }
 
 impl ForwardApp {
-    pub fn new(outbound_addr: SocketAddr, geoip_service: Arc<geoip::GeoIPService>, mrps: isize, memcached_client: memcache::Client, haproxy: bool) -> Self {
+    pub fn new(
+        outbound_addr: SocketAddr,
+        geoip_service: Arc<geoip::GeoIPService>,
+        mrps: isize,
+        memcached_client: memcache::Client,
+        haproxy: bool,
+        ip_whitelist: Vec<String>,
+) -> Self {
         ForwardApp {
             outbound_addr,
             geoip_service,
             mrps,
             memcached_client,
-            haproxy
+            haproxy,
+            ip_whitelist,
         }
     }
 }
@@ -170,7 +179,7 @@ impl ForwardApp {
                 Err(e)
             }).unwrap().unwrap_or_default();
 
-        if incomming_addr == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
+        if self.ip_whitelist.contains(&incomming_addr.to_string()) {
             return true;
         }
 
