@@ -166,7 +166,10 @@ impl ForwardApp {
             .unwrap()
             .unwrap();
         let incomming_addr= socket_addr.as_inet().unwrap().ip();
-        debug!("{}", socket_addr);
+
+        if self.ip_whitelist.contains(&incomming_addr.to_string()) {
+            return true;
+        }
 
         let ip_status: i16 = self.memcached_client.get(&incomming_addr.to_string())
             .map_err(|e| {
@@ -178,10 +181,6 @@ impl ForwardApp {
                 }
                 Err(e)
             }).unwrap().unwrap_or_default();
-
-        if self.ip_whitelist.contains(&incomming_addr.to_string()) {
-            return true;
-        }
 
         if ip_status == MemcachedStatus::IpBlocked as i16 {
             warn!("address {} reject from cache", incomming_addr);
