@@ -233,14 +233,14 @@ impl ForwardApp {
                             outbound.write_all(&buf_io[0..n]).await?;
                             outbound.flush().await?;
     
-                            // integrate inc traffic limits
+                            // TODO: dpi
                             INCOMING_BYTES_TOTAL.inc_by(n as u64);
                             REQUEST_TOTAL.inc();
     
                             let curr_window_requests = RATE_LIMITER.observe(&incomming_addr, 1);
                             
                             if curr_window_requests > self.mrps {
-                                warn!("address {} exceed mrps", incomming_addr);
+                                warn!("address {} exceed mrps, rps: {}", incomming_addr, curr_window_requests);
                                 self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
                                 io.shutdown().await?;
                             }

@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     options.tcp_keepalive = Some(TcpKeepalive {
         idle: Duration::from_secs(60),
         interval: Duration::from_secs(5),
-        count: 5,
+        count: 10,
         user_timeout: Duration::from_secs(10),
     });
 
