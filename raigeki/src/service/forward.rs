@@ -14,7 +14,7 @@ use pingora::server::ShutdownWatch;
 use pingora::services::listening::Service;
 use pingora_limits::rate::Rate;
 
-use prometheus::{register_counter, register_int_counter, register_int_gauge, Counter, IntCounter, IntGauge};
+use prometheus::{register_counter_vec, register_int_counter, register_int_gauge, CounterVec, IntCounter, IntGauge};
 
 use crate::service::MemcachedStatus;
 
@@ -32,8 +32,13 @@ static OUTGOING_BYTES_TOTAL: Lazy<IntCounter> =
 
 static RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(1)));
 
-static REQUEST_TOTAL: Lazy<Counter> =
-    Lazy::new(|| register_counter!("request_total", "Number of processed requests per seccond").unwrap());
+static REQUEST_TOTAL: Lazy<CounterVec> = Lazy::new(|| 
+    register_counter_vec!(
+        "request_total", 
+        "Number of processed requests per second", 
+        &["ip"]
+    ).unwrap()
+);
 
 static INCOMING_CONNECTIONS_ATTEMPTS: Lazy<IntGauge> = 
     Lazy::new(|| register_int_gauge!("incoming_connections_attempts", "Total number of incoming connection attempts, including both successful and unsuccessful connections.").unwrap());
@@ -165,13 +170,13 @@ impl ForwardApp {
             .map(|d| d.peer_addr())
             .unwrap()
             .unwrap();
-        let incomming_addr= socket_addr.as_inet().unwrap().ip();
+        let incoming_addr= socket_addr.as_inet().unwrap().ip();
 
-        if self.ip_whitelist.contains(&incomming_addr.to_string()) {
+        if self.ip_whitelist.contains(&incoming_addr.to_string()) {
             return true;
         }
 
-        let ip_status: i16 = self.memcached_client.get(&incomming_addr.to_string())
+        let ip_status: i16 = self.memcached_client.get(&incoming_addr.to_string())
             .map_err(|e| {
                 match e {
                     memcache::MemcacheError::CommandError(memcache::CommandError::KeyNotFound) => {
@@ -183,29 +188,29 @@ impl ForwardApp {
             }).unwrap().unwrap_or_default();
 
         if ip_status == MemcachedStatus::IpBlocked as i16 {
-            warn!("address {} reject from cache", incomming_addr);
+            warn!("address {} reject from cache", incoming_addr);
             io.shutdown().await.unwrap();
             return false;
         }
 
         if self
             .geoip_service
-            .in_asn_blacklist(incomming_addr)
+            .in_asn_blacklist(incoming_addr)
             .unwrap_or(true)
         {
-            warn!("address {} reject by asn", incomming_addr);
-            self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
+            warn!("address {} reject by asn", incoming_addr);
+            self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
             return false;
         }
 
         if self
             .geoip_service
-            .in_country_blacklist(incomming_addr)
+            .in_country_blacklist(incoming_addr)
             .unwrap_or(true)
         {
-            warn!("address {} reject by country", incomming_addr);
-            self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
+            warn!("address {} reject by country", incoming_addr);
+            self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
             return false;
         }
@@ -223,8 +228,9 @@ impl ForwardApp {
             .map(|d| d.peer_addr())
             .unwrap()
             .unwrap();
-        let incomming_addr= socket_addr.as_inet().unwrap().ip();
-    
+        let incoming_addr= socket_addr.as_inet().unwrap().ip();
+        let ip_str = incoming_addr.to_string();
+
         loop {
             select! {
                 result = io.read(&mut buf_io) => {
@@ -235,13 +241,13 @@ impl ForwardApp {
     
                             // TODO: dpi
                             INCOMING_BYTES_TOTAL.inc_by(n as u64);
-                            REQUEST_TOTAL.inc();
+                            REQUEST_TOTAL.with_label_values(&[&ip_str]).inc();
     
-                            let curr_window_requests = RATE_LIMITER.observe(&incomming_addr, 1);
+                            let curr_window_requests = RATE_LIMITER.observe(&incoming_addr, 1);
                             
                             if curr_window_requests > self.mrps {
-                                warn!("address {} exceed mrps, rps: {}", incomming_addr, curr_window_requests);
-                                self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
+                                warn!("address {} exceed mrps, rps: {}", incoming_addr, curr_window_requests);
+                                self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
                                 io.shutdown().await?;
                             }
                         }
