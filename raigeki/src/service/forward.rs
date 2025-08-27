@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
-use std::net::{IpAddr, SocketAddr, Ipv4Addr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
@@ -90,7 +90,7 @@ impl ServerApp for ForwardApp {
 
         if self.haproxy {
             if let Err(e) = self.write_haproxy_header(&mut outbound, &io).await {
-                warn!("Failed to write HAProxy header: {:?}", e);
+                warn!("Failed to write TCP Proxy header: {:?}", e);
                 io.shutdown().await.unwrap();
                 return None;
             }
@@ -233,12 +233,14 @@ impl ForwardApp {
                             outbound.write_all(&buf_io[0..n]).await?;
                             outbound.flush().await?;
     
+                            // integrate inc traffic limits
                             INCOMING_BYTES_TOTAL.inc_by(n as u64);
                             REQUEST_TOTAL.inc();
     
                             let curr_window_requests = RATE_LIMITER.observe(&incomming_addr, 1);
                             
                             if curr_window_requests > self.mrps {
+                                warn!("address {} exceed mrps", incomming_addr);
                                 self.memcached_client.set(&incomming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
                                 io.shutdown().await?;
                             }
