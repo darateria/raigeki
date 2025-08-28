@@ -27,6 +27,8 @@ pub enum Error {
     AsnBlocked(IpAddr),
     #[error("Country is blocked ip={0}")]
     CountryBlocked(IpAddr),
+    #[error("{0}")]
+    AnyhowError(#[from] anyhow::Error)
 }
 
 impl serde::Serialize for Error {

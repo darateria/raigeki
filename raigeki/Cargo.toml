@@ -23,3 +23,7 @@ memcache = "0.18.0"
 num_cpus = "1.16.0"
 dotenvy = "0.15.7"
 anyhow = "1.0.99"
+serde_json = "1.0.143"
+bytes = "1.10.1"
+# valence_protocol = {version = "0.2.0-alpha.1+mc.1.20.1", git = "https://github.com/valence-rs/valence.git", branch = "main" }
+

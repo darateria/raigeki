@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
+use raigeki_mcproto::login::DisconnectPacket as LoginDisconnectPacket;
+use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +32,7 @@ static INCOMING_BYTES_TOTAL: Lazy<IntCounter> =
 static OUTGOING_BYTES_TOTAL: Lazy<IntCounter> =
     Lazy::new(|| register_int_counter!("outgoing_bytes_total", "Total outgoing bytes").unwrap());
 
-static RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(1)));
+static RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(60)));
 
 static REQUEST_TOTAL: Lazy<CounterVec> = Lazy::new(|| 
     register_counter_vec!(
@@ -50,7 +52,7 @@ pub fn forward_service(app: ForwardApp) -> Service<ForwardApp> {
 pub struct ForwardApp {
     geoip_service: Arc<geoip::GeoIPService>,
     outbound_addr: SocketAddr,
-    mrps: isize,
+    mrpm: isize,
     memcached_client: memcache::Client,
     haproxy: bool,
     ip_whitelist: Vec<String>,
@@ -60,7 +62,7 @@ impl ForwardApp {
     pub fn new(
         outbound_addr: SocketAddr,
         geoip_service: Arc<geoip::GeoIPService>,
-        mrps: isize,
+        mrpm: isize,
         memcached_client: memcache::Client,
         haproxy: bool,
         ip_whitelist: Vec<String>,
@@ -68,7 +70,7 @@ impl ForwardApp {
         ForwardApp {
             outbound_addr,
             geoip_service,
-            mrps,
+            mrpm,
             memcached_client,
             haproxy,
             ip_whitelist,
@@ -81,14 +83,25 @@ impl ServerApp for ForwardApp {
     async fn process_new(
         self: &Arc<Self>,
         mut io: Stream,
-        _shutdown: &ShutdownWatch,
+        shutdown: &ShutdownWatch,
     ) -> Option<Stream> {
         INCOMING_CONNECTIONS_ATTEMPTS.inc();
 
         if let Err(e) = self.is_valid_connection(&mut io).await {
             warn!("Failed validation: {:?}", e);
-            let p = raigeki_mcproto::packets::build_disconnect_packet(&e.to_string()).ok()?;
-            io.write_all(&p.serialize()).await.ok()?;
+            
+            let reason = json!({
+                        "text": e.to_string(),
+                        "color": "red",
+                        "bold": true,
+                    }).to_owned();
+
+            let packet = LoginDisconnectPacket::new(reason.to_string());
+            io.write_all(&packet.serialize()).await.ok()?;
+            io.flush().await.ok()?;
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
             return None;
         }
 
@@ -99,13 +112,22 @@ impl ServerApp for ForwardApp {
         if self.haproxy {
             if let Err(e) = self.write_haproxy_header(&mut outbound, &io).await {
                 warn!("Failed to write TCP Proxy header: {:?}", e);
-                let p = raigeki_mcproto::packets::build_disconnect_packet(&e.to_string()).ok()?;
-                io.write_all(&p.serialize()).await.ok()?;
+                
+                let reason = json!({
+                        "text": e.to_string(),
+                        "color": "red",
+                        "bold": true,
+                    }).to_owned();
+
+                let packet = LoginDisconnectPacket::new(reason.to_string());
+                io.write_all(&packet.serialize()).await.ok()?;
+                io.flush().await.ok()?;
+
                 return None;
             }
         }
 
-        if self.handle_connection(&mut io, &mut outbound).await.is_err() {
+        if self.handle_connection(&mut io, &mut outbound, shutdown).await.is_err() {
             warn!("Connection ended with error");
         }
 
@@ -174,7 +196,10 @@ impl ForwardApp {
             .map(|d| d.peer_addr())
             .unwrap()
             .unwrap();
+
         let incoming_addr= socket_addr.as_inet().unwrap().ip();
+
+        debug!("Incoming conn: {}", incoming_addr);
 
         if self.ip_whitelist.contains(&incoming_addr.to_string()) {
             return Ok(());
@@ -192,8 +217,7 @@ impl ForwardApp {
             }).unwrap().unwrap_or_default();
 
         if ip_status == MemcachedStatus::IpBlocked as i16 {
-            warn!("address {} reject from cache", incoming_addr);
-            io.shutdown().await.unwrap();
+            warn!("Address {} reject from cache", incoming_addr);
             return Err(Error::IpBlockedInCache(incoming_addr));
         }
 
@@ -202,9 +226,8 @@ impl ForwardApp {
             .in_asn_blacklist(incoming_addr)
             .unwrap_or(true)
         {
-            warn!("address {} reject by asn", incoming_addr);
+            warn!("Address {} reject by asn", incoming_addr);
             self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
-            io.shutdown().await.unwrap();
             return Err(Error::AsnBlocked(incoming_addr));
         }
 
@@ -213,16 +236,15 @@ impl ForwardApp {
             .in_country_blacklist(incoming_addr)
             .unwrap_or(true)
         {
-            warn!("address {} reject by country", incoming_addr);
+            warn!("Address {} reject by country", incoming_addr);
             self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
-            io.shutdown().await.unwrap();
             return Err(Error::CountryBlocked(incoming_addr));
         }
 
         return Ok(());
     }
 
-    async fn handle_connection(&self, io: &mut Box<dyn IO>, outbound: &mut TcpStream) -> Result<(), Error> {
+    async fn handle_connection(&self, io: &mut Box<dyn IO>, outbound: &mut TcpStream, shutdown: &ShutdownWatch) -> Result<(), Error> {
         let mut buf_io = vec![0; 1024];
         let mut buf_outbound = vec![0; 1024];
 
@@ -235,8 +257,16 @@ impl ForwardApp {
         let incoming_addr= socket_addr.as_inet().unwrap().ip();
         let ip_str = incoming_addr.to_string();
 
+        let mut shutdown_clone = shutdown.clone();
+        
         loop {
             select! {
+                _ = shutdown_clone.changed() => {
+                warn!("Shutdown signal received, closing connection from {}", ip_str);
+
+                return Ok(());
+            }
+
                 result = io.read(&mut buf_io) => {
                     match result {
                         Ok(n) if n > 0 => {
@@ -249,14 +279,14 @@ impl ForwardApp {
     
                             let curr_window_requests = RATE_LIMITER.observe(&incoming_addr, 1);
                             
-                            if curr_window_requests > self.mrps {
-                                warn!("address {} exceed mrps, rps: {}", incoming_addr, curr_window_requests);
+                            if curr_window_requests > self.mrpm {
+                                warn!("Address {} exceed max rpm; rpm={}", incoming_addr, curr_window_requests);
                                 self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
                                 io.shutdown().await?;
                             }
                         }
                         Ok(_) => {
-                            debug!("session closing");
+                            debug!("Session closing");
                             return Ok(());
                         }
                         Err(e) => {
@@ -275,7 +305,7 @@ impl ForwardApp {
                             OUTGOING_BYTES_TOTAL.inc_by(n as u64);
                         }
                         Ok(_) => {
-                            debug!("outbound connection closed");
+                            debug!("Outbound connection closed");
                             return Ok(());
                         }
                         Err(e) => {

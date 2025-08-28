@@ -1,0 +1,4 @@
+---
+version: 1
+threads: 2
+grace_period_seconds: 5
