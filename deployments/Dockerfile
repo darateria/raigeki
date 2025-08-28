@@ -14,9 +14,11 @@ COPY Cargo.toml .
 COPY raigeki/Cargo.toml raigeki/Cargo.toml
 COPY raigeki-error/Cargo.toml raigeki-error/Cargo.toml
 COPY raigeki-tools/Cargo.toml raigeki-tools/Cargo.toml
+COPY raigeki-mcproto/Cargo.toml raigeki-mcproto/Cargo.toml
 
 COPY raigeki-error/src raigeki-error/src
 COPY raigeki-tools/src raigeki-tools/src
+COPY raigeki-mcproto/src raigeki-mcproto/src
 COPY raigeki/src raigeki/src
 
 RUN cargo build --release --package raigeki
