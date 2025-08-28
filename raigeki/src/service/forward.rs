@@ -85,7 +85,10 @@ impl ServerApp for ForwardApp {
     ) -> Option<Stream> {
         INCOMING_CONNECTIONS_ATTEMPTS.inc();
 
-        if !self.is_valid_connection(&mut io).await {
+        if let Err(e) = self.is_valid_connection(&mut io).await {
+            warn!("Failed validation: {:?}", e);
+            let p = raigeki_mcproto::packets::build_disconnect_packet(&e.to_string()).ok()?;
+            io.write_all(&p.serialize()).await.ok()?;
             return None;
         }
 
@@ -96,13 +99,14 @@ impl ServerApp for ForwardApp {
         if self.haproxy {
             if let Err(e) = self.write_haproxy_header(&mut outbound, &io).await {
                 warn!("Failed to write TCP Proxy header: {:?}", e);
-                io.shutdown().await.unwrap();
+                let p = raigeki_mcproto::packets::build_disconnect_packet(&e.to_string()).ok()?;
+                io.write_all(&p.serialize()).await.ok()?;
                 return None;
             }
         }
 
         if self.handle_connection(&mut io, &mut outbound).await.is_err() {
-            warn!("connection end with error")
+            warn!("Connection ended with error");
         }
 
         TOTAL_CONNS.dec();
@@ -163,7 +167,7 @@ impl ForwardApp {
         Ok(())
     }
 
-    async fn is_valid_connection(&self, io: &mut Stream) -> bool {
+    async fn is_valid_connection(&self, io: &mut Stream) -> Result<(), Error> {
         let socket_digest = io.get_socket_digest();
         let socket_addr = socket_digest
             .as_ref()
@@ -173,7 +177,7 @@ impl ForwardApp {
         let incoming_addr= socket_addr.as_inet().unwrap().ip();
 
         if self.ip_whitelist.contains(&incoming_addr.to_string()) {
-            return true;
+            return Ok(());
         }
 
         let ip_status: i16 = self.memcached_client.get(&incoming_addr.to_string())
@@ -184,13 +188,13 @@ impl ForwardApp {
                     },
                     _ => {}
                 }
-                Err(e)
+                Err(Error::InternalError(e.to_string()))
             }).unwrap().unwrap_or_default();
 
         if ip_status == MemcachedStatus::IpBlocked as i16 {
             warn!("address {} reject from cache", incoming_addr);
             io.shutdown().await.unwrap();
-            return false;
+            return Err(Error::IpBlockedInCache(incoming_addr));
         }
 
         if self
@@ -201,7 +205,7 @@ impl ForwardApp {
             warn!("address {} reject by asn", incoming_addr);
             self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
-            return false;
+            return Err(Error::AsnBlocked(incoming_addr));
         }
 
         if self
@@ -212,10 +216,10 @@ impl ForwardApp {
             warn!("address {} reject by country", incoming_addr);
             self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             io.shutdown().await.unwrap();
-            return false;
+            return Err(Error::CountryBlocked(incoming_addr));
         }
 
-        return true;
+        return Ok(());
     }
 
     async fn handle_connection(&self, io: &mut Box<dyn IO>, outbound: &mut TcpStream) -> Result<(), Error> {

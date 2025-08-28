@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 raigeki-error = { version = "0.2.0", path = "../raigeki-error" }
 raigeki-tools = { version = "0.1.0", path = "../raigeki-tools" }
+raigeki-mcproto = { version = "0.1.0", path = "../raigeki-mcproto" }
 async-trait = "0.1.83"
 jemallocator = "0.5.4"
 log = "0.4.22"

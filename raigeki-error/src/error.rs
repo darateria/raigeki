@@ -1,8 +1,12 @@
+use std::net::IpAddr;
+
 use thiserror::Error;
 use memcache::MemcacheError; // Make sure to import the MemcacheError type
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Internal error: {0}")]
+    InternalError(String),
     #[error("IO: {0}")]
     IOError(#[from] std::io::Error),
     #[error("maxminddb error: {0}")]
@@ -16,7 +20,13 @@ pub enum Error {
     #[error("memcached: {0}")]
     MemcachedError(MemcacheError),
     #[error("invalid connection")]
-    InvalidConnection
+    InvalidConnection,
+    #[error("IP address is blocked ip={0}")]
+    IpBlockedInCache(IpAddr),
+    #[error("ASN is blocked ip={0}")]
+    AsnBlocked(IpAddr),
+    #[error("Country is blocked ip={0}")]
+    CountryBlocked(IpAddr),
 }
 
 impl serde::Serialize for Error {
