@@ -86,15 +86,6 @@ impl DDoSDetector {
             return Ok(false);
         }
 
-        // 1. Быстрые проверки (не требуют сложных вычислений)
-        let current_success_rate = current_agg.success_rate;
-        
-        // Абсолютный порог успешности
-        if current_success_rate < self.critical_success_rate {
-            warn!("Low success rate detected: {:.2}%", current_success_rate);
-            return Ok(true);
-        }
-
         // Абсолютный порог флуда пакетов
         if self.is_packet_flood(current_agg)? {
             warn!("Packet flood detected");
@@ -130,11 +121,16 @@ impl DDoSDetector {
         let rate_anomaly = current_agg.incoming_attempts as f64 > 
             mean_rate + self.sigma_threshold * stddev_rate;
         
-        let success_anomaly = current_success_rate < 
+        let success_anomaly = current_agg.success_rate < 
             mean_success - self.sigma_threshold * stddev_success;
 
         let packet_anomaly = current_agg.request_total as f64 > 
             mean_packets + self.sigma_threshold * stddev_packets;
+
+        if mean_success < self.critical_success_rate {
+            warn!("Low success rate detected last: {:.2}%", mean_success);
+            return Ok(true);
+        }
 
         // 4. Комбинированная проверка
         Ok(rate_anomaly || success_anomaly || packet_anomaly || self.check_combined_attack(current_agg)?)
