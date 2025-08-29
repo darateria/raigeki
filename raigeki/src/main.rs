@@ -78,7 +78,7 @@ fn main() -> Result<()> {
     let mut prometheus_service_http = ListeningService::prometheus_http_service();
     prometheus_service_http.add_tcp_with_settings("0.0.0.0:6150", options);
 
-    let background_service = background_service("example", service::stats::ExportService::new());
+    let background_service = background_service("metrics", service::stats::ExportService::new());
 
     let services: Vec<Box<dyn Service>> = vec![
         Box::new(forward_service),

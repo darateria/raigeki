@@ -23,7 +23,7 @@ use crate::service::MemcachedStatus;
 use super::geoip;
 use raigeki_error::Error;
 
-static TOTAL_CONNS: Lazy<IntGauge> =
+pub static TOTAL_CONNS: Lazy<IntGauge> =
     Lazy::new(|| register_int_gauge!("total_connections", "total tcp connections").unwrap());
 
 static INCOMING_BYTES_TOTAL: Lazy<IntCounter> =
@@ -32,21 +32,27 @@ static INCOMING_BYTES_TOTAL: Lazy<IntCounter> =
 static OUTGOING_BYTES_TOTAL: Lazy<IntCounter> =
     Lazy::new(|| register_int_counter!("outgoing_bytes_total", "Total outgoing bytes").unwrap());
 
+pub static DDOS_MODE: Lazy<IntGauge> =
+    Lazy::new(|| register_int_gauge!("ddos_mode", "DDoS protection mode").unwrap());
+
 static RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(60)));
 
-static REQUEST_TOTAL: Lazy<CounterVec> = Lazy::new(|| 
+pub static REQUEST_PER_IP: Lazy<CounterVec> = Lazy::new(|| 
     register_counter_vec!(
-        "request_total", 
-        "Number of processed requests per second", 
+        "request_per_ip", 
+        "Number of processed requests from single ip", 
         &["ip"]
     ).unwrap()
 );
 
-static INCOMING_CONNECTIONS_ATTEMPTS: Lazy<IntGauge> = 
+pub static REQUEST_TOTAL: Lazy<IntCounter> =
+    Lazy::new(|| register_int_counter!("request_total", "Total requests processed").unwrap());
+
+pub static INCOMING_CONNECTIONS_ATTEMPTS: Lazy<IntGauge> = 
     Lazy::new(|| register_int_gauge!("incoming_connections_attempts", "Total number of incoming connection attempts, including both successful and unsuccessful connections.").unwrap());
 
 pub fn forward_service(app: ForwardApp) -> Service<ForwardApp> {
-    Service::new("Upstream Service".to_string(), app)
+    Service::new("Raigeki Proxy Service".to_string(), app)
 }
 
 pub struct ForwardApp {
@@ -87,25 +93,27 @@ impl ServerApp for ForwardApp {
     ) -> Option<Stream> {
         INCOMING_CONNECTIONS_ATTEMPTS.inc();
 
-        if let Err(e) = self.is_valid_connection(&mut io).await {
-            warn!("Failed validation: {:?}", e);
-            
-            let reason = json!({
-                        "text": e.to_string(),
-                        "color": "red",
-                        "bold": true,
-                    }).to_owned();
+        if DDOS_MODE.get() == 1 {
+                if let Err(e) = self.is_valid_connection(&mut io).await {
+                warn!("Failed validation: {:?}", e);
+                
+                let reason = json!({
+                            "text": e.to_string(),
+                            "color": "red",
+                            "bold": true,
+                        }).to_owned();
 
-            let packet = LoginDisconnectPacket::new(reason.to_string());
-            io.write_all(&packet.serialize()).await.ok()?;
-            io.flush().await.ok()?;
+                let packet = LoginDisconnectPacket::new(reason.to_string());
+                io.write_all(&packet.serialize()).await.ok()?;
+                io.flush().await.ok()?;
 
-            tokio::time::sleep(Duration::from_millis(50)).await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
 
-            return None;
+                return None;
+            }
         }
 
-        let mut outbound = TcpStream::connect(self.outbound_addr).await.unwrap();
+        let mut outbound = TcpStream::connect(self.outbound_addr).await.ok()?;
 
         TOTAL_CONNS.inc();
 
@@ -235,6 +243,7 @@ impl ForwardApp {
             .geoip_service
             .in_country_blacklist(incoming_addr)
             .unwrap_or(true)
+
         {
             warn!("Address {} reject by country", incoming_addr);
             self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
@@ -275,7 +284,8 @@ impl ForwardApp {
     
                             // TODO: dpi
                             INCOMING_BYTES_TOTAL.inc_by(n as u64);
-                            REQUEST_TOTAL.with_label_values(&[&ip_str]).inc();
+                            REQUEST_PER_IP.with_label_values(&[&ip_str]).inc();
+                            REQUEST_TOTAL.inc();
     
                             let curr_window_requests = RATE_LIMITER.observe(&incoming_addr, 1);
                             

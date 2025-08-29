@@ -28,7 +28,9 @@ pub enum Error {
     #[error("Country is blocked ip={0}")]
     CountryBlocked(IpAddr),
     #[error("{0}")]
-    AnyhowError(#[from] anyhow::Error)
+    AnyhowError(#[from] anyhow::Error),
+    #[error("Not enough data for calculation")]
+    InsufficientData,
 }
 
 impl serde::Serialize for Error {
