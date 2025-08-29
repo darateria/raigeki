@@ -27,7 +27,7 @@ impl ExportService {
     pub fn new() -> Self {
         let current_pid = std::process::id();
         let system = Arc::new(Mutex::new(System::new_all()));
-        let conn_inspector = Arc::new(Mutex::new(DDoSDetector::new(10, 70.0, 3.0, 5.0)));
+        let conn_inspector = Arc::new(Mutex::new(DDoSDetector::new(10, 47.0, 3.0, 5.0)));
 
         ExportService { pid: current_pid as usize, system, conn_inspector}
     }
