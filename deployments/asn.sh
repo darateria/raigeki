@@ -24,8 +24,8 @@ for url in "${URLS[@]}"; do
     
     # Скачиваем файл с проверкой на ошибки
     if curl -s --fail "$url" > "$TMP_DIR/temp_file.txt"; then
-        # Извлекаем ASN номера (обрабатываем разные форматы)
-        grep -Eo 'AS[0-9]+' "$TMP_DIR/temp_file.txt" >> "$TMP_DIR/all_asn.txt"
+        # Извлекаем ASN номера (только цифры после AS)
+        grep -Eo 'AS[0-9]+' "$TMP_DIR/temp_file.txt" | sed 's/AS//' >> "$TMP_DIR/all_asn.txt"
     else
         echo "Ошибка при скачивании: $url"
     fi
@@ -44,7 +44,7 @@ sort -u "$TMP_DIR/all_asn.txt" > "$TMP_DIR/unique_asn.txt"
 # Сохраняем количество ASN перед очисткой временной директории
 ASN_COUNT=$(wc -l < "$TMP_DIR/unique_asn.txt" | tr -d ' ')
 
-# Преобразуем в строку с запятыми
+# Преобразуем в строку с запятыми (только цифры)
 ASN_LIST=$(tr '\n' ',' < "$TMP_DIR/unique_asn.txt" | sed 's/,$//')
 
 # Сохраняем результат
