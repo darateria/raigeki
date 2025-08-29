@@ -27,7 +27,7 @@ impl ExportService {
     pub fn new() -> Self {
         let current_pid = std::process::id();
         let system = Arc::new(Mutex::new(System::new_all()));
-        let conn_inspector = Arc::new(Mutex::new(DDoSDetector::new(50, 8.0, 3.0, 5.0)));
+        let conn_inspector = Arc::new(Mutex::new(DDoSDetector::new(50, 70.0, 3.0, 5.0)));
 
         ExportService { pid: current_pid as usize, system, conn_inspector}
     }
@@ -74,6 +74,7 @@ impl BackgroundService for ExportService {
                                 warn!("DDoS attack detected! Enabling DDoS protection mode.");
                                 crate::service::forward::DDOS_MODE.set(1);
                             } else {
+                                warn!("Disabling DDoS protection mode.");
                                 crate::service::forward::DDOS_MODE.set(0);
                             }
                         }

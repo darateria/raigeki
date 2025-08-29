@@ -293,6 +293,7 @@ impl ForwardApp {
                                 warn!("Address {} exceed max rpm; rpm={}", incoming_addr, curr_window_requests);
                                 self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60)?;
                                 io.shutdown().await?;
+                                return Ok(());
                             }
                         }
                         Ok(_) => {
