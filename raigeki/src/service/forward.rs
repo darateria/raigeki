@@ -223,12 +223,8 @@ impl ForwardApp {
             }).unwrap().unwrap_or_default();
 
         if ip_status == MemcachedStatus::IpBlocked as i16 {
-            warn!("Address {} reject from cache; status=blocked", incoming_addr);
+            warn!("Address {} reject from cache; IP banned", incoming_addr);
             return Err(Error::IpBlockedInCache(incoming_addr));
-        }
-
-        if DDOS_MODE.get() == 0 {
-            return Ok(());
         }
 
         if self
@@ -236,9 +232,13 @@ impl ForwardApp {
             .in_asn_blacklist(incoming_addr)
             .unwrap_or(true)
         {
-            warn!("Address {} reject by asn", incoming_addr);
+            warn!("Address {} reject by asn; Please disable VPN", incoming_addr);
             self.memcached_client.set(&incoming_addr.to_string(), MemcachedStatus::IpBlocked as i16, 1 * 60 * 60).unwrap();
             return Err(Error::AsnBlocked(incoming_addr));
+        }
+
+        if DDOS_MODE.get() == 0 {
+            return Ok(());
         }
 
         if self
