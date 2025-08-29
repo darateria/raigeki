@@ -44,9 +44,9 @@ impl DDoSDetector {
 
     pub fn add_metrics(&mut self, metrics: ConnectionMetrics) {
         if let Some(ref mut agg) = self.current_agg_metrics {
-            agg.total_conns -= metrics.total_conns;
-            agg.incoming_attempts -= metrics.incoming_attempts;
-            agg.request_total -= metrics.request_total;
+            agg.total_conns = metrics.total_conns;
+            agg.incoming_attempts = metrics.incoming_attempts - agg.incoming_attempts;
+            agg.request_total = metrics.request_total - agg.request_total;
         } else {
             self.current_agg_metrics = Some(ConnectionMetrics {
                 total_conns: metrics.total_conns,
