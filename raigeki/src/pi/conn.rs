@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::Error;
+use log::warn;
 use raigeki_error::Error::InsufficientData;
 
 #[derive(Debug, Clone, Copy)]
@@ -42,17 +43,11 @@ impl DDoSDetector {
     }
 
     pub fn add_metrics(&mut self, metrics: ConnectionMetrics) {
-        if let Some(ref mut agg) = self.current_agg_metrics {
-            agg.total_conns += metrics.total_conns;
-            agg.incoming_attempts += metrics.incoming_attempts;
-            agg.request_total += metrics.request_total;
-        } else {
-            self.current_agg_metrics = Some(ConnectionMetrics {
-                total_conns: metrics.total_conns,
-                incoming_attempts: metrics.incoming_attempts,
-                request_total: metrics.request_total,
-            });
-        }
+        self.current_agg_metrics = Some(ConnectionMetrics {
+            total_conns: metrics.total_conns,
+            incoming_attempts: metrics.incoming_attempts,
+            request_total: metrics.request_total,
+        });
     }
 
     pub fn analyze(&mut self) -> Result<bool, Error> {
@@ -90,11 +85,13 @@ impl DDoSDetector {
         
         // Абсолютный порог успешности
         if current_success_rate < self.critical_success_rate {
+            warn!("Low success rate detected: {:.2}%", current_success_rate);
             return Ok(true);
         }
 
         // Абсолютный порог флуда пакетов
         if self.is_packet_flood(current_agg)? {
+            warn!("Packet flood detected");
             return Ok(true);
         }
 
