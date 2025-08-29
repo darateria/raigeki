@@ -93,24 +93,22 @@ impl ServerApp for ForwardApp {
     ) -> Option<Stream> {
         INCOMING_CONNECTIONS_ATTEMPTS.inc();
 
-        if DDOS_MODE.get() == 1 {
-                if let Err(e) = self.is_valid_connection(&mut io).await {
-                warn!("Failed validation: {:?}", e);
-                
-                let reason = json!({
-                            "text": e.to_string(),
-                            "color": "red",
-                            "bold": true,
-                        }).to_owned();
+        if let Err(e) = self.is_valid_connection(&mut io).await {
+            warn!("Failed validation: {:?}", e);
+            
+            let reason = json!({
+                        "text": e.to_string(),
+                        "color": "red",
+                        "bold": true,
+                    }).to_owned();
 
-                let packet = LoginDisconnectPacket::new(reason.to_string());
-                io.write_all(&packet.serialize()).await.ok()?;
-                io.flush().await.ok()?;
+            let packet = LoginDisconnectPacket::new(reason.to_string());
+            io.write_all(&packet.serialize()).await.ok()?;
+            io.flush().await.ok()?;
 
-                tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
 
-                return None;
-            }
+            return None;
         }
 
         let mut outbound = TcpStream::connect(self.outbound_addr).await.ok()?;
@@ -225,8 +223,12 @@ impl ForwardApp {
             }).unwrap().unwrap_or_default();
 
         if ip_status == MemcachedStatus::IpBlocked as i16 {
-            warn!("Address {} reject from cache", incoming_addr);
+            warn!("Address {} reject from cache; status=blocked", incoming_addr);
             return Err(Error::IpBlockedInCache(incoming_addr));
+        }
+
+        if DDOS_MODE.get() == 0 {
+            return Ok(());
         }
 
         if self
