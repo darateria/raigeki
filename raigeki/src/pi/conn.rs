@@ -26,8 +26,6 @@ pub struct DDoSDetector {
     critical_success_rate: f64,
     sigma_threshold: f64,
     packet_flood_threshold: f64,
-    
-    current_agg_metrics: Option<ConnectionMetrics>,
 }
 
 impl DDoSDetector {
@@ -38,31 +36,23 @@ impl DDoSDetector {
             critical_success_rate,
             sigma_threshold,
             packet_flood_threshold,
-            current_agg_metrics: None,
         }
     }
 
     pub fn add_metrics(&mut self, metrics: ConnectionMetrics) {
-        if let Some(ref mut agg) = self.current_agg_metrics {
-            agg.total_conns = metrics.total_conns;
-            agg.incoming_attempts = metrics.incoming_attempts - agg.incoming_attempts;
-            agg.request_total = metrics.request_total - agg.request_total;
-        } else {
-            self.current_agg_metrics = Some(ConnectionMetrics {
-                total_conns: metrics.total_conns,
-                incoming_attempts: metrics.incoming_attempts,
-                request_total: metrics.request_total,
-            });
-        }
-    }
-
-    pub fn analyze(&mut self) -> Result<bool, Error> {
-        let agg_metrics = match self.current_agg_metrics.take() {
-            Some(metrics) => metrics,
-            None => return Ok(false),
+        let mut agg_metrics = ConnectionMetrics {
+            total_conns: metrics.total_conns,
+            incoming_attempts: metrics.incoming_attempts,
+            request_total: metrics.request_total,
         };
 
-        let success_rate = Self::calculate_success_rate(&agg_metrics)?;
+        if let Some(ref mut agg) = self.aggregated_history.back() {
+            agg_metrics.total_conns = metrics.total_conns;
+            agg_metrics.incoming_attempts = metrics.incoming_attempts - agg.incoming_attempts;
+            agg_metrics.request_total = metrics.request_total - agg.request_total;
+        }
+
+        let success_rate = Self::calculate_success_rate(&agg_metrics);
 
         let aggregated = AggregatedMetrics {
             total_conns: agg_metrics.total_conns,
@@ -76,18 +66,17 @@ impl DDoSDetector {
             self.aggregated_history.pop_front();
         }
         self.aggregated_history.push_back(aggregated);
-
-        // Проверяем на DDOS
-        self.check_ddos(&aggregated)
     }
 
-    fn check_ddos(&self, current_agg: &AggregatedMetrics) -> Result<bool, Error> {
+    pub fn analyze(&self) -> Result<bool, Error> {
         if self.aggregated_history.len() < 2 {
             return Ok(false);
         }
 
+        let current_agg = self.aggregated_history.back().unwrap();
+
         // Абсолютный порог флуда пакетов
-        if self.is_packet_flood(current_agg)? {
+        if self.is_packet_flood(current_agg) {
             warn!("Packet flood detected");
             return Ok(true);
         }
@@ -136,9 +125,9 @@ impl DDoSDetector {
         Ok(rate_anomaly || success_anomaly || packet_anomaly || self.check_combined_attack(current_agg)?)
     }
 
-    fn is_packet_flood(&self, current_agg: &AggregatedMetrics) -> Result<bool, Error> {
+    fn is_packet_flood(&self, current_agg: &AggregatedMetrics) -> bool {
         if self.aggregated_history.is_empty() {
-            return Ok(false);
+            return false;
         }
 
         // Берем медианное значение пакетов из истории
@@ -151,7 +140,7 @@ impl DDoSDetector {
         let median_packets = historical_packets[historical_packets.len() / 2] as f64;
 
         // Текущее значение превышает медианное в N раз
-        Ok(current_agg.request_total as f64 > median_packets * self.packet_flood_threshold)
+        current_agg.request_total as f64 > median_packets * self.packet_flood_threshold
     }
 
     fn check_combined_attack(&self, current_agg: &AggregatedMetrics) -> Result<bool, Error> {
@@ -163,19 +152,19 @@ impl DDoSDetector {
         let mut attack_score = 0;
 
         // Умеренный рост попыток подключений (> 25%)
-        if self.check_moderate_increase(current_agg.incoming_attempts as f32, |m| m.incoming_attempts as f32, 1.25)? {
+        if self.check_moderate_increase(current_agg.incoming_attempts as f32, |m| m.incoming_attempts as f32, 1.5)? { // old - 1.25
             warn!("Moderate increase in incoming attempts detected");
             attack_score += 1;
         }
 
         // Умеренное падение успешности (< 80% от нормы)
-        if self.check_moderate_decrease(current_agg.success_rate, |m| m.success_rate, 0.8)? {
+        if self.check_moderate_decrease(current_agg.success_rate, |m| m.success_rate, 0.6)? { // old - 0.8
             warn!("Moderate decrease in success rate detected");
             attack_score += 1;
         }
 
         // Умеренный рост пакетов (> 50%)
-        if self.check_moderate_increase(current_agg.request_total as f32, |m| m.request_total as f32, 1.5)? {
+        if self.check_moderate_increase(current_agg.request_total as f32, |m| m.request_total as f32, 2.0)? { // old - 1.5
             warn!("Moderate increase in request total detected");
             attack_score += 1;
         }
@@ -212,25 +201,12 @@ impl DDoSDetector {
         Ok(current.into() < mean * threshold)
     }
 
-    fn calculate_success_rate(metrics: &ConnectionMetrics) -> Result<f64, Error> {
+    fn calculate_success_rate(metrics: &ConnectionMetrics) -> f64 {
         if metrics.incoming_attempts == 0 {
-            return Err(Error::from(InsufficientData));
+            return 100.0;
         }
-        
-        Ok((metrics.total_conns as f64 / metrics.incoming_attempts as f64) * 100.0)
-    }
 
-    pub fn get_current_metrics(&self) -> Option<&ConnectionMetrics> {
-        self.current_agg_metrics.as_ref()
-    }
-
-    pub fn history_len(&self) -> usize {
-        self.aggregated_history.len()
-    }
-
-    pub fn clear_history(&mut self) {
-        self.aggregated_history.clear();
-        self.current_agg_metrics = None;
+        (metrics.total_conns as f64 / metrics.incoming_attempts as f64) * 100.0
     }
 }
 
