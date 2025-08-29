@@ -164,16 +164,19 @@ impl DDoSDetector {
 
         // Умеренный рост попыток подключений (> 25%)
         if self.check_moderate_increase(current_agg.incoming_attempts as f32, |m| m.incoming_attempts as f32, 1.25)? {
+            warn!("Moderate increase in incoming attempts detected");
             attack_score += 1;
         }
 
         // Умеренное падение успешности (< 80% от нормы)
         if self.check_moderate_decrease(current_agg.success_rate, |m| m.success_rate, 0.8)? {
+            warn!("Moderate decrease in success rate detected");
             attack_score += 1;
         }
 
         // Умеренный рост пакетов (> 50%)
         if self.check_moderate_increase(current_agg.request_total as f32, |m| m.request_total as f32, 1.5)? {
+            warn!("Moderate increase in request total detected");
             attack_score += 1;
         }
 
