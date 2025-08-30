@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::Error;
-use log::warn;
+use log::{info, warn};
 use raigeki_error::Error::InsufficientData;
 
 #[derive(Debug, Clone, Copy)]
@@ -80,24 +80,27 @@ impl DDoSDetector {
         }
 
         // 2. Статистический анализ с использованием истории
-        let historical_rates: Vec<f64> = self.aggregated_history
+        let historical_rates: Vec<f64> = self
+            .aggregated_history
             .iter()
             .map(|m| m.incoming_attempts as f64)
             .collect();
 
-        let historical_success_rates: Vec<f64> = self.aggregated_history
+        let historical_success_rates: Vec<f64> = self
+            .aggregated_history
             .iter()
             .map(|m| m.success_rate)
             .collect();
 
-        let historical_packets: Vec<f64> = self.aggregated_history
+        let historical_packets: Vec<f64> = self
+            .aggregated_history
             .iter()
             .map(|m| m.request_total as f64)
             .collect();
 
         let mean_rate = statistical_mean(&historical_rates)?;
         let stddev_rate = standard_deviation(&historical_rates, mean_rate)?;
-        
+
         let mean_success = statistical_mean(&historical_success_rates)?;
         let stddev_success = standard_deviation(&historical_success_rates, mean_success)?;
 
@@ -105,14 +108,20 @@ impl DDoSDetector {
         let stddev_packets = standard_deviation(&historical_packets, mean_packets)?;
 
         // 3. Проверка статистических аномалий
-        let rate_anomaly = current_agg.incoming_attempts as f64 > 
-            mean_rate + self.sigma_threshold * stddev_rate;
-        
-        let success_anomaly = current_agg.success_rate < 
-            mean_success - self.sigma_threshold * stddev_success;
+        let rate_anomaly =
+            current_agg.incoming_attempts as f64 > mean_rate + self.sigma_threshold * stddev_rate;
+        info!("rate_anomaly: {}, current: {}, mean: {:.2}, stddev: {:.2}",
+            rate_anomaly, current_agg.incoming_attempts, mean_rate, stddev_rate);
 
-        let packet_anomaly = current_agg.request_total as f64 > 
-            mean_packets + self.sigma_threshold * stddev_packets;
+        let success_anomaly =
+            current_agg.success_rate < mean_success - self.sigma_threshold * stddev_success;
+        info!("success_anomaly: {}, current: {:.2}%, mean: {:.2}%, stddev: {:.2}",
+            success_anomaly, current_agg.success_rate, mean_success, stddev_success);
+
+        let packet_anomaly =
+            current_agg.request_total as f64 > mean_packets + self.sigma_threshold * stddev_packets;
+        info!("packet_anomaly: {}, current: {}, mean: {:.2}, stddev: {:.2}",
+            packet_anomaly, current_agg.request_total, mean_packets, stddev_packets);
 
         // FIXME: think about it rn disable. Too many false positives
         // if mean_success < self.critical_success_rate {
@@ -121,7 +130,10 @@ impl DDoSDetector {
         // }
 
         // 4. Комбинированная проверка
-        Ok(rate_anomaly || success_anomaly || packet_anomaly || self.check_combined_attack(current_agg)?)
+        Ok(rate_anomaly
+            || success_anomaly
+            || packet_anomaly
+            || self.check_combined_attack(current_agg)?)
     }
 
     fn is_packet_flood(&self, current_agg: &AggregatedMetrics) -> bool {
@@ -130,7 +142,8 @@ impl DDoSDetector {
         }
 
         // Берем медианное значение пакетов из истории
-        let mut historical_packets: Vec<u64> = self.aggregated_history
+        let mut historical_packets: Vec<u64> = self
+            .aggregated_history
             .iter()
             .map(|m| m.request_total)
             .collect();
@@ -151,19 +164,30 @@ impl DDoSDetector {
         let mut attack_score = 0;
 
         // Умеренный рост попыток подключений (> 25%)
-        if self.check_moderate_increase(current_agg.incoming_attempts as f32, |m| m.incoming_attempts as f32, 1.5)? { // old - 1.25
+        if self.check_moderate_increase(
+            current_agg.incoming_attempts as f32,
+            |m| m.incoming_attempts as f32,
+            1.5,
+        )? {
+            // old - 1.25
             warn!("Moderate increase in incoming attempts detected");
             attack_score += 1;
         }
 
         // Умеренное падение успешности (< 80% от нормы)
-        if self.check_moderate_decrease(current_agg.success_rate, |m| m.success_rate, 0.6)? { // old - 0.8
+        if self.check_moderate_decrease(current_agg.success_rate, |m| m.success_rate, 0.6)? {
+            // old - 0.8
             warn!("Moderate decrease in success rate detected");
             attack_score += 1;
         }
 
         // Умеренный рост пакетов (> 50%)
-        if self.check_moderate_increase(current_agg.request_total as f32, |m| m.request_total as f32, 2.0)? { // old - 1.5
+        if self.check_moderate_increase(
+            current_agg.request_total as f32,
+            |m| m.request_total as f32,
+            2.0,
+        )? {
+            // old - 1.5
             warn!("Moderate increase in request total detected");
             attack_score += 1;
         }
@@ -172,12 +196,18 @@ impl DDoSDetector {
         Ok(attack_score >= 2)
     }
 
-    fn check_moderate_increase<T, F>(&self, current: T, selector: F, threshold: f64) -> Result<bool, Error>
+    fn check_moderate_increase<T, F>(
+        &self,
+        current: T,
+        selector: F,
+        threshold: f64,
+    ) -> Result<bool, Error>
     where
         T: Into<f64> + Copy,
         F: Fn(&AggregatedMetrics) -> T,
     {
-        let historical_values: Vec<f64> = self.aggregated_history
+        let historical_values: Vec<f64> = self
+            .aggregated_history
             .iter()
             .map(|m| selector(m).into())
             .collect();
@@ -186,12 +216,18 @@ impl DDoSDetector {
         Ok(current.into() > mean * threshold)
     }
 
-    fn check_moderate_decrease<T, F>(&self, current: T, selector: F, threshold: f64) -> Result<bool, Error>
+    fn check_moderate_decrease<T, F>(
+        &self,
+        current: T,
+        selector: F,
+        threshold: f64,
+    ) -> Result<bool, Error>
     where
         T: Into<f64> + Copy,
         F: Fn(&AggregatedMetrics) -> T,
     {
-        let historical_values: Vec<f64> = self.aggregated_history
+        let historical_values: Vec<f64> = self
+            .aggregated_history
             .iter()
             .map(|m| selector(m).into())
             .collect();
@@ -213,7 +249,7 @@ fn statistical_mean(data: &[f64]) -> Result<f64, Error> {
     if data.is_empty() {
         return Err(Error::from(InsufficientData));
     }
-    
+
     let sum: f64 = data.iter().sum();
     Ok(sum / data.len() as f64)
 }
@@ -223,12 +259,14 @@ fn standard_deviation(data: &[f64], mean: f64) -> Result<f64, Error> {
         return Err(Error::from(InsufficientData));
     }
 
-    let variance: f64 = data.iter()
+    let variance: f64 = data
+        .iter()
         .map(|value| {
             let diff = mean - value;
             diff * diff
         })
-        .sum::<f64>() / data.len() as f64;
+        .sum::<f64>()
+        / data.len() as f64;
 
     Ok(variance.sqrt())
 }

@@ -1,4 +1,7 @@
-use std::{sync::{Arc, Mutex}, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use log::{error, warn};
@@ -29,7 +32,11 @@ impl ExportService {
         let system = Arc::new(Mutex::new(System::new_all()));
         let conn_inspector = Arc::new(Mutex::new(DDoSDetector::new(50, 3.0, 5.0)));
 
-        ExportService { pid: current_pid as usize, system, conn_inspector}
+        ExportService {
+            pid: current_pid as usize,
+            system,
+            conn_inspector,
+        }
     }
 }
 

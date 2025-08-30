@@ -1,4 +1,9 @@
-use std::{net::IpAddr, sync::{Arc, RwLock}, thread, time::Duration};
+use std::{
+    net::IpAddr,
+    sync::{Arc, RwLock},
+    thread,
+    time::Duration,
+};
 
 use log::info;
 use maxminddb::{geoip2, Reader};
@@ -19,8 +24,12 @@ impl GeoIPService {
         asn_blacklist: Vec<u32>,
         country_blacklist: Vec<String>,
     ) -> Self {
-        let ddb_asn = Arc::new(RwLock::new(maxminddb::Reader::open_readfile(&mmdb_asn_path).unwrap()));
-        let ddb_city = Arc::new(RwLock::new(maxminddb::Reader::open_readfile(&mmdb_city_path).unwrap()));
+        let ddb_asn = Arc::new(RwLock::new(
+            maxminddb::Reader::open_readfile(&mmdb_asn_path).unwrap(),
+        ));
+        let ddb_city = Arc::new(RwLock::new(
+            maxminddb::Reader::open_readfile(&mmdb_city_path).unwrap(),
+        ));
 
         let ddb_asn_clone = Arc::clone(&ddb_asn);
         let ddb_city_clone = Arc::clone(&ddb_city);

@@ -17,7 +17,6 @@ pub struct Settings {
     pub blocked_country: Vec<String>,
     pub rate_limit: isize,
     pub memcached_addrs: Vec<String>,
-    pub ip_whitelist: Vec<String>,
 }
 
 fn parse_env_to_bool(var_name: &str, default: bool) -> bool {
@@ -34,11 +33,12 @@ fn parse_env_to_bool(var_name: &str, default: bool) -> bool {
 impl Settings {
     pub fn new() -> Self {
         let _ = dotenv();
-        
+
         let auto_mmdb = parse_env_to_bool("MMDB_AUTOMODE", true);
         let haproxy = parse_env_to_bool("HAPROXY_HEADERS", false);
         let mmdb_asn = env::var("MMDB_ASN").unwrap_or_else(|_| "/tmp/geolite2-asn.mmdb".to_owned());
-        let mmdb_city = env::var("MMDB_CITY").unwrap_or_else(|_| "/tmp/geolite2-city.mmdb".to_owned());
+        let mmdb_city =
+            env::var("MMDB_CITY").unwrap_or_else(|_| "/tmp/geolite2-city.mmdb".to_owned());
 
         let l4_ip = env::var("L4_IP").unwrap_or_else(|_| {
             info!("L4_IP not set, using default value");
@@ -119,16 +119,6 @@ impl Settings {
             .filter(|s| !s.is_empty())
             .collect();
 
-        let ip_whitelist = env::var("IP_WHITELIST")
-            .unwrap_or_else(|_| {
-                info!("IP_WHITELIST not set, using default value");
-                "127.0.0.1".to_string()
-            })
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
         Settings {
             auto_mmdb,
             haproxy,
@@ -142,7 +132,6 @@ impl Settings {
             blocked_country,
             rate_limit,
             memcached_addrs,
-            ip_whitelist,
         }
     }
 }

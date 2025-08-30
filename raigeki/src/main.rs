@@ -15,8 +15,8 @@
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-use log::info;
 use anyhow::{Context, Result};
+use log::info;
 use pingora::prelude::Opt;
 use pingora::protocols::TcpKeepalive;
 use pingora::server::Server;
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     let mut server = Server::new(Some(Opt::parse_args())).context("init server")?;
     let settings = settings::Settings::new();
     let memcache_client = memcache::connect(settings.memcached_addrs).context("init memcached")?;
-    
+
     if settings.auto_mmdb {
         download_ddbm(&settings.mmdb_asn, &settings.mmdb_city).context("download MMDB")?;
     }
@@ -69,7 +69,6 @@ fn main() -> Result<()> {
         settings.rate_limit,
         memcache_client,
         settings.haproxy,
-        settings.ip_whitelist,
     );
 
     let mut forward_service = service::forward::forward_service(forward_app);
