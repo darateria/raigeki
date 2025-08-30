@@ -23,17 +23,15 @@ pub struct AggregatedMetrics {
 pub struct DDoSDetector {
     aggregated_history: VecDeque<AggregatedMetrics>,
     max_history_size: usize,
-    critical_success_rate: f64,
     sigma_threshold: f64,
     packet_flood_threshold: f64,
 }
 
 impl DDoSDetector {
-    pub fn new(max_history_size: usize, critical_success_rate: f64, sigma_threshold: f64, packet_flood_threshold: f64) -> Self {
+    pub fn new(max_history_size: usize, sigma_threshold: f64, packet_flood_threshold: f64) -> Self {
         Self {
             aggregated_history: VecDeque::with_capacity(max_history_size),
             max_history_size,
-            critical_success_rate,
             sigma_threshold,
             packet_flood_threshold,
         }
@@ -116,10 +114,11 @@ impl DDoSDetector {
         let packet_anomaly = current_agg.request_total as f64 > 
             mean_packets + self.sigma_threshold * stddev_packets;
 
-        if mean_success < self.critical_success_rate {
-            warn!("Low success rate detected last: {:.2}%", mean_success);
-            return Ok(true);
-        }
+        // FIXME: think about it rn disable. Too many false positives
+        // if mean_success < self.critical_success_rate {
+        //     warn!("Low success rate detected last: {:.2}%", mean_success);
+        //     return Ok(true);
+        // }
 
         // 4. Комбинированная проверка
         Ok(rate_anomaly || success_anomaly || packet_anomaly || self.check_combined_attack(current_agg)?)
