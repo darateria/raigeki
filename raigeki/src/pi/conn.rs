@@ -27,6 +27,8 @@ pub struct DDoSDetector {
     packet_flood_threshold: f64,
 }
 
+const RPM_THRESHOLD: isize = 6;
+
 impl DDoSDetector {
     pub fn new(max_history_size: usize, sigma_threshold: f64, packet_flood_threshold: f64) -> Self {
         Self {
@@ -72,6 +74,10 @@ impl DDoSDetector {
         }
 
         let current_agg = self.aggregated_history.back().unwrap();
+
+        if current_agg.incoming_attempts < RPM_THRESHOLD as u64 {
+            return Ok(false);
+        }
 
         // Абсолютный порог флуда пакетов
         if self.is_packet_flood(current_agg) {
