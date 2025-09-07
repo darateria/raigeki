@@ -104,10 +104,25 @@ impl ServerApp for ForwardApp {
                 "bold": true,
                 "extra": [
                     {
-                        "text": "Try turning off VPN. If you believe this is an error, please contact the server administrator.",
-                        "color": "yellow",
+                        "text": "\nПопробуйтье отключить ВПН!\n",
+                        "color": "red",
+                        "bold": true
+                    },
+                    {
+                        "text": "Если думаете что это ошибка: ",
+                        "color": "gray",
                         "bold": false
                     },
+                    {
+                        "text": "https://discord.darateria.com/",
+                        "color": "gray",
+                        "underlined": true,
+                        "bold": false,
+                        "clickEvent": {
+                            "action": "open_url",
+                            "value": "https://discord.darateria.com"   
+                        }
+                    }
                 ]
             })
             .to_owned();

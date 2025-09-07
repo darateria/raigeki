@@ -81,7 +81,9 @@ impl BackgroundService for ExportService {
                                 warn!("DDoS attack detected! Enabling DDoS protection mode.");
                                 crate::service::forward::DDOS_MODE.set(1);
                             } else {
-                                warn!("Disabling DDoS protection mode.");
+                                if crate::service::forward::DDOS_MODE.get() == 1 {
+                                    warn!("No DDoS attack detected. Disabling DDoS protection mode.");
+                                }
                                 crate::service::forward::DDOS_MODE.set(0);
                             }
                         }
