@@ -102,6 +102,13 @@ impl ServerApp for ForwardApp {
                 "text": e.to_string(),
                 "color": "red",
                 "bold": true,
+                "extra": [
+                    {
+                        "text": "Try turning off VPN. If you believe this is an error, please contact the server administrator.",
+                        "color": "yellow",
+                        "bold": false
+                    },
+                ]
             })
             .to_owned();
 

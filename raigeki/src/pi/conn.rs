@@ -75,10 +75,6 @@ impl DDoSDetector {
 
         let current_agg = self.aggregated_history.back().unwrap();
 
-        if current_agg.incoming_attempts < RPM_THRESHOLD as u64 {
-            return Ok(false);
-        }
-
         // Абсолютный порог флуда пакетов
         if self.is_packet_flood(current_agg) {
             warn!("Packet flood detected");
@@ -113,6 +109,10 @@ impl DDoSDetector {
         let mean_packets = statistical_mean(&historical_packets)?;
         let stddev_packets = standard_deviation(&historical_packets, mean_packets)?;
 
+        if mean_rate < RPM_THRESHOLD as f64 {
+            return Ok(false);
+        }
+
         // 3. Проверка статистических аномалий
         let rate_anomaly =
             current_agg.incoming_attempts as f64 > mean_rate + self.sigma_threshold * stddev_rate;
@@ -142,6 +142,7 @@ impl DDoSDetector {
             || self.check_combined_attack(current_agg)?)
     }
 
+    // TODO: сделать такое же по инет траффику
     fn is_packet_flood(&self, current_agg: &AggregatedMetrics) -> bool {
         if self.aggregated_history.is_empty() {
             return false;
@@ -160,6 +161,7 @@ impl DDoSDetector {
         // Текущее значение превышает медианное в N раз
         current_agg.request_total as f64 > median_packets * self.packet_flood_threshold
     }
+
 
     fn check_combined_attack(&self, current_agg: &AggregatedMetrics) -> Result<bool, Error> {
         // Обнаружение сложных атак, где есть несколько умеренных признаков
