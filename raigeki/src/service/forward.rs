@@ -104,7 +104,7 @@ impl ServerApp for ForwardApp {
                 "bold": true,
                 "extra": [
                     {
-                        "text": "\nПопробуйтье отключить ВПН!\n",
+                        "text": "\nПопробуйте отключить ВПН!\n",
                         "color": "red",
                         "bold": true
                     },
