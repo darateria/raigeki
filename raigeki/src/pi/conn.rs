@@ -25,6 +25,7 @@ pub struct DDoSDetector {
     max_history_size: usize,
     sigma_threshold: f64,
     packet_flood_threshold: f64,
+    previous_metric: ConnectionMetrics
 }
 
 const RPM_THRESHOLD: isize = 6;
@@ -36,21 +37,22 @@ impl DDoSDetector {
             max_history_size,
             sigma_threshold,
             packet_flood_threshold,
+            previous_metric: ConnectionMetrics {
+                total_conns: 0,
+                incoming_attempts: 0,
+                request_total: 0,
+            },
         }
     }
 
     pub fn add_metrics(&mut self, metrics: ConnectionMetrics) {
-        let mut agg_metrics = ConnectionMetrics {
+        let agg_metrics = ConnectionMetrics {
             total_conns: metrics.total_conns,
-            incoming_attempts: metrics.incoming_attempts,
-            request_total: metrics.request_total,
+            incoming_attempts: metrics.incoming_attempts - self.previous_metric.incoming_attempts,
+            request_total: metrics.request_total - self.previous_metric.request_total,
         };
 
-        if let Some(ref mut agg) = self.aggregated_history.back() {
-            agg_metrics.total_conns = metrics.total_conns;
-            agg_metrics.incoming_attempts = metrics.incoming_attempts - agg.incoming_attempts;
-            agg_metrics.request_total = metrics.request_total - agg.request_total;
-        }
+        self.previous_metric = metrics;
 
         let success_rate = Self::calculate_success_rate(&agg_metrics);
 
@@ -129,7 +131,7 @@ impl DDoSDetector {
         info!("packet_anomaly: {}, current: {}, mean: {:.2}, stddev: {:.2}",
             packet_anomaly, current_agg.request_total, mean_packets, stddev_packets);
 
-        // FIXME: think about it rn disable. Too many false positives
+        // FIXME: think about it, rn disabled. Too many false positives
         // if mean_success < self.critical_success_rate {
         //     warn!("Low success rate detected last: {:.2}%", mean_success);
         //     return Ok(true);
