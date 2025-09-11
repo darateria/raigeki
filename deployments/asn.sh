@@ -4,9 +4,10 @@
 TMP_DIR=$(mktemp -d)
 OUTPUT_FILE="combined_asn_list.txt"
 
+# "https://raw.githubusercontent.com/NullifiedCode/ASN-Lists/main/Malicious/ASN.txt" много ложных ASN, поэтому не используем
+
 # URLs файлов (используем raw.githubusercontent.com для прямого доступа к содержимому)
 URLS=(
-    "https://raw.githubusercontent.com/NullifiedCode/ASN-Lists/main/Malicious/ASN.txt"
     "https://raw.githubusercontent.com/NullifiedCode/ASN-Lists/main/VPN%20Providers/ASN.txt"
     "https://raw.githubusercontent.com/NullifiedCode/ASN-Lists/main/VPS%20Providers/ASN.txt"
     "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/input/datacenter/ASN.txt"

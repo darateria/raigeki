@@ -29,6 +29,7 @@ pub struct DDoSDetector {
 }
 
 const RPM_THRESHOLD: isize = 6;
+const PACKETS_THRESHOLD: isize = 1000;
 
 impl DDoSDetector {
     pub fn new(max_history_size: usize, sigma_threshold: f64, packet_flood_threshold: f64) -> Self {
@@ -111,6 +112,7 @@ impl DDoSDetector {
         let mean_packets = statistical_mean(&historical_packets)?;
         let stddev_packets = standard_deviation(&historical_packets, mean_packets)?;
 
+        // Если медианное значение слишком мало, игнорируем
         if mean_rate < RPM_THRESHOLD as f64 {
             return Ok(false);
         }
@@ -159,6 +161,11 @@ impl DDoSDetector {
 
         historical_packets.sort();
         let median_packets = historical_packets[historical_packets.len() / 2] as f64;
+
+        // Если медианное значение слишком мало, игнорируем
+        if median_packets < PACKETS_THRESHOLD as f64 {
+            return false;
+        }
 
         // Текущее значение превышает медианное в N раз
         current_agg.request_total as f64 > median_packets * self.packet_flood_threshold
