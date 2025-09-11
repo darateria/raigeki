@@ -28,8 +28,8 @@ pub struct DDoSDetector {
     previous_metric: ConnectionMetrics
 }
 
-const RPM_THRESHOLD: isize = 6;
-const PACKETS_THRESHOLD: isize = 1000;
+const RPM_THRESHOLD: isize = 3;
+const PACKETS_THRESHOLD: isize = 100;
 
 impl DDoSDetector {
     pub fn new(max_history_size: usize, sigma_threshold: f64, packet_flood_threshold: f64) -> Self {
