@@ -130,9 +130,7 @@ impl ServerApp for ForwardApp {
             let packet = LoginDisconnectPacket::new(reason.to_string());
             io.write_all(&packet.serialize()).await.ok()?;
             io.flush().await.ok()?;
-
-            tokio::time::sleep(Duration::from_millis(50)).await;
-
+            
             return None;
         }
 
