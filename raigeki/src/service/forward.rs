@@ -39,6 +39,7 @@ pub static DDOS_MODE: Lazy<IntGauge> =
     Lazy::new(|| register_int_gauge!("ddos_mode", "DDoS protection mode").unwrap());
 
 static RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(60)));
+static CONNECTION_RATE_LIMITER: Lazy<Rate> = Lazy::new(|| Rate::new(Duration::from_secs(60)));
 
 pub static REQUEST_PER_IP: Lazy<CounterVec> = Lazy::new(|| {
     register_counter_vec!(
@@ -64,6 +65,7 @@ pub struct ForwardApp {
     geoip_service: Arc<geoip::GeoIPService>,
     outbound_addr: SocketAddr,
     mrpm: isize,
+    mcpm: isize,
     memcached_client: memcache::Client,
     haproxy: bool,
 }
@@ -73,6 +75,7 @@ impl ForwardApp {
         outbound_addr: SocketAddr,
         geoip_service: Arc<geoip::GeoIPService>,
         mrpm: isize,
+        mcpm: isize,
         memcached_client: memcache::Client,
         haproxy: bool,
     ) -> Self {
@@ -80,6 +83,7 @@ impl ForwardApp {
             outbound_addr,
             geoip_service,
             mrpm,
+            mcpm,
             memcached_client,
             haproxy,
         }
@@ -94,6 +98,53 @@ impl ServerApp for ForwardApp {
         shutdown: &ShutdownWatch,
     ) -> Option<Stream> {
         INCOMING_CONNECTIONS_ATTEMPTS.inc();
+
+        let socket_digest = io.get_socket_digest();
+        let socket_addr = socket_digest
+            .as_ref()
+            .map(|d| d.peer_addr())
+            .unwrap()
+            .unwrap();
+        let incoming_addr = socket_addr.as_inet().unwrap().ip();
+
+        if CONNECTION_RATE_LIMITER.observe(&incoming_addr, 1) > self.mcpm {
+            warn!("Connection rate limit exceeded for {}", incoming_addr);
+
+            let reason = json!({
+                "text": "IP адрес забанен на 1 час",
+                "color": "red",
+                "bold": true,
+                "extra": [
+                    {
+                        "text": "\nСлишком много попыток подключения!\n",
+                        "color": "red",
+                        "bold": true
+                    },
+                    {
+                        "text": "Если думаете что это ошибка: ",
+                        "color": "gray",
+                        "bold": false
+                    },
+                    {
+                        "text": "https://discord.darateria.com/",
+                        "color": "gray",
+                        "underlined": true,
+                        "bold": false,
+                        "clickEvent": {
+                            "action": "open_url",
+                            "value": "https://discord.darateria.com"   
+                        }
+                    }
+                ]
+            })
+            .to_owned();
+
+            let packet = LoginDisconnectPacket::new(reason.to_string());
+            io.write_all(&packet.serialize()).await.ok()?;
+            io.flush().await.ok()?;
+
+            return None;
+        }
 
         if let Err(e) = self.is_valid_connection(&mut io).await {
             warn!("Failed validation: {:?}", e);

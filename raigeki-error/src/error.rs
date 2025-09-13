@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 
 use thiserror::Error;
-use memcache::MemcacheError; // Make sure to import the MemcacheError type
+use memcache::MemcacheError;
 
 #[derive(Error, Debug)]
 pub enum Error {

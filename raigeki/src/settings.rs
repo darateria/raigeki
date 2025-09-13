@@ -16,6 +16,7 @@ pub struct Settings {
     pub blocked_asn: Vec<u32>,
     pub blocked_country: Vec<String>,
     pub rate_limit: isize,
+    pub connect_rate_limit: isize,
     pub memcached_addrs: Vec<String>,
 }
 
@@ -109,6 +110,17 @@ impl Settings {
                 50
             });
 
+        let connect_rate_limit = env::var("CONNECT_RATE_LIMIT")
+            .unwrap_or_else(|_| {
+                info!("CONNECT_RATE_LIMIT not set, using default value");
+                "15".to_string()
+            })
+            .parse::<isize>()
+            .unwrap_or_else(|_| {
+                error!("Invalid CONNECT_RATE_LIMIT value, using default value");
+                15
+            });
+
         let memcached_addrs = env::var("MEMCACHED_ADDRS")
             .unwrap_or_else(|_| {
                 info!("MEMCACHED_ADDRS not set, using default value");
@@ -131,6 +143,7 @@ impl Settings {
             blocked_asn,
             blocked_country,
             rate_limit,
+            connect_rate_limit,
             memcached_addrs,
         }
     }

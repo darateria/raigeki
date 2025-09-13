@@ -67,6 +67,7 @@ fn main() -> Result<()> {
             .context("Failed to parse outbound address")?,
         geoip_service,
         settings.rate_limit,
+        settings.connect_rate_limit,
         memcache_client,
         settings.haproxy,
     );
